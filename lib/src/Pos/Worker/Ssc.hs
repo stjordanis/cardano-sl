@@ -134,8 +134,8 @@ onNewSlotSsc
     => Genesis.Config
     -> Diffusion m
     -> m ()
-onNewSlotSsc genesisConfig diffusion = whenOriginalEra $
-    onNewSlot (configEpochSlots genesisConfig) defaultOnNewSlotParams $ \slotId ->
+onNewSlotSsc genesisConfig diffusion = onNewSlot (configEpochSlots genesisConfig) defaultOnNewSlotParams $ \slotId ->
+    whenOriginalEra $
         recoveryCommGuard (configBlkSecurityParam genesisConfig) "onNewSlot worker in SSC" $ do
             sscGarbageCollectLocalData slotId
             whenM (shouldParticipate (configBlockVersionData genesisConfig) $ siEpoch slotId) $ do
