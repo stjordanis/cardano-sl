@@ -18,7 +18,12 @@ module Pos.Chain.Block.Slog.Types
 import           Universum
 
 import           Control.Lens (makeClassy)
-import           Formatting (Format, bprint, later)
+import qualified Cardano.Crypto.Wallet as CC
+import qualified Data.ByteString.Char8 as BS
+import           Formatting (Format, bprint, int, later, string, (%))
+import qualified Formatting.Buildable as Buildable
+import qualified Data.ByteString.Base16 as B16
+
 import           System.Metrics.Label (Label)
 
 import           Pos.Binary.Class (Cons (..), Field (..), deriveSimpleBi)
@@ -26,7 +31,7 @@ import           Pos.Core (ChainDifficulty, EpochIndex, FlatSlotId,
                      LocalSlotIndex, SlotCount, slotIdF, unflattenSlotId)
 import           Pos.Core.Chrono (OldestFirst (..))
 import           Pos.Core.Reporting (MetricMonitorState)
-import           Pos.Crypto (PublicKey)
+import           Pos.Crypto (PublicKey (..))
 
 
 data LastSlotInfo = LastSlotInfo
@@ -35,6 +40,11 @@ data LastSlotInfo = LastSlotInfo
     , lsiLeaderPubkeyHash :: !PublicKey
     -- ^ The hash of the public key of the slot leader for this slot.
     } deriving (Eq, Show, Generic)
+
+instance Buildable LastSlotInfo where
+    build (LastSlotInfo i (PublicKey pk)) =
+        bprint ( "LastSlotInfo "% int %" "% string)
+            i (BS.unpack . B16.encode $ CC.xpubPublicKey pk)
 
 -- | This type contains 'FlatSlotId's of the blocks whose depth is
 -- less than 'blkSecurityParam'. 'FlatSlotId' is chosen in favor of
