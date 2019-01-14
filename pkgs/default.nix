@@ -14190,9 +14190,11 @@ aeson
 aeson-options
 array
 base
+base16-bytestring
 bytestring
 Cabal
 canonical-json
+cardano-crypto
 cardano-sl-binary
 cardano-sl-core
 cardano-sl-crypto
