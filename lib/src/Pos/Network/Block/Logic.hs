@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE RankNTypes          #-}
 
 -- | Network-related logic that's mostly methods and dialogs between
@@ -15,6 +16,7 @@ module Pos.Network.Block.Logic
 
 import           Universum
 
+import           Control.Concurrent
 import           Control.Concurrent.STM (isFullTBQueue, readTVar, writeTBQueue,
                      writeTVar)
 import           Control.Exception (IOException)
@@ -25,6 +27,8 @@ import           Formatting (bprint, build, sformat, shown, stext, (%))
 import qualified Formatting.Buildable as B
 import           Serokell.Util.Text (listJson)
 import qualified System.Metrics.Gauge as Metrics
+import           GHC.Prim
+import           System.IO (hFlush, stderr, stdout)
 
 import           Pos.Chain.Block (ApplyBlocksException, Block, BlockHeader,
                      Blund, HasHeaderHash (..), HeaderHash, LastKnownHeaderTag,
@@ -56,7 +60,7 @@ import           Pos.Infra.Util.JsonLog.Events (MemPoolModifyReason (..),
 import           Pos.Network.Block.RetrievalQueue (BlockRetrievalQueue,
                      BlockRetrievalQueueTag, BlockRetrievalTask (..))
 import           Pos.Network.Block.WorkMode (BlockWorkMode)
-import           Pos.Util (buildListBounds, multilineBounds, _neLast)
+import           Pos.Util (multilineBounds, _neLast)
 import           Pos.Util.AssertMode (inAssertMode)
 import           Pos.Util.Util (lensOf)
 import           Pos.Util.Wlog (logDebug, logInfo, logWarning)
@@ -232,16 +236,26 @@ handleBlocks
     -> m ()
 handleBlocks genesisConfig txpConfig blocks diffusion = do
     logDebug "handleBlocks: processing"
-    inAssertMode $ logInfo $
-        sformat ("Processing sequence of blocks: " % buildListBounds % "...") $
+    logDebug $
+        sformat ("Processing sequence of blocks: " % listJson % "...") $
             getOldestFirst $ map headerHash blocks
-    maybe onNoLca handleBlocksWithLca =<<
-        lcaWithMainChain (map (view blockHeader) blocks)
+
+    mx <- lcaWithMainChain (map (view blockHeader) blocks)
+    logDebug $ sformat ("WTF: " % shown) mx
+
+    maybe onNoLca handleBlocksWithLca mx
     inAssertMode $ logDebug $ "Finished processing sequence of blocks"
   where
-    onNoLca = logWarning $
-        "Sequence of blocks can't be processed, because there is no LCA. " <>
-        "Probably rollback happened in parallel"
+    onNoLca = do
+        logWarning $
+            "Sequence of blocks can't be processed, because there is no LCA. " <>
+            "Probably rollback happened in parallel"
+        liftIO $ do
+            hFlush stdout
+            hFlush stderr
+            threadDelay 100000
+        putTextLn "\n\n\nHere, hold my beer ...."
+        print (unsafeCoerce# 0# :: [Int])
 
     handleBlocksWithLca :: HeaderHash -> m ()
     handleBlocksWithLca lcaHash = do

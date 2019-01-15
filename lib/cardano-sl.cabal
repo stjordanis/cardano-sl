@@ -177,6 +177,7 @@ library
                       , formatting
                       , formatting
                       , generics-sop
+                      , ghc-prim
                       , hspec
                       , http-api-data
                       , http-client
