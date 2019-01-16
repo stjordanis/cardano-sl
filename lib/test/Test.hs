@@ -5,6 +5,7 @@ import           Test.Hspec (hspec)
 import           Spec (spec)
 
 import           Test.Pos.Configuration (defaultTestConf)
+import           Test.Pos.Launcher.Configuration (tests)
 import qualified Test.Pos.Launcher.Json
 import           Test.Pos.Util.Tripping (runTests)
 
@@ -12,4 +13,4 @@ main :: IO ()
 main = do
     putText $ "default configuration: " <> show defaultTestConf
     hspec spec
-    runTests [ Test.Pos.Launcher.Json.tests ]
+    runTests [ Test.Pos.Launcher.Json.tests, Test.Pos.Launcher.Configuration.tests ]
