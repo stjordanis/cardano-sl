@@ -45,7 +45,7 @@ import           Pos.Core.JsonLog (CanJsonLog (..))
 import           Pos.Core.Reporting (HasMisbehaviorMetrics (..),
                      MisbehaviorMetrics (..))
 import           Pos.Core.Slotting (MonadSlots (getCurrentSlot))
-import           Pos.Crypto (shortHashF)
+import           Pos.Crypto (mediumHashF, shortHashF)
 import           Pos.DB.Block (ClassifyHeaderRes (..), classifyNewHeader,
                      lcaWithMainChain, verifyAndApplyBlocks)
 import qualified Pos.DB.Block as L
@@ -239,6 +239,8 @@ handleBlocks genesisConfig txpConfig blocks diffusion = do
     logDebug $
         sformat ("Processing sequence of blocks: " % listJson % "...") $
             getOldestFirst $ map headerHash blocks
+
+    logDebug $ sformat ("First header: " % mediumHashF) (headerHash . NE.head $ getOldestFirst blocks)
 
     mx <- lcaWithMainChain (map (view blockHeader) blocks)
     logDebug $ sformat ("WTF: " % shown) mx
