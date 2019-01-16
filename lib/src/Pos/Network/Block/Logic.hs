@@ -237,7 +237,7 @@ handleBlocks
 handleBlocks genesisConfig txpConfig blocks diffusion = do
     logDebug "handleBlocks: processing"
     logDebug $
-        sformat ("Processing sequence of blocks: " % listJson % "...") $
+        sformat ("Processing sequence of blocks: " % listJson) $
             getOldestFirst $ map headerHash blocks
 
     logDebug $ sformat ("First header: " % mediumHashF) (headerHash . NE.head $ getOldestFirst blocks)
