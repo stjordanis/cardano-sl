@@ -33,8 +33,8 @@ import           Serokell.Util.Verify (formatAllErrors, verResToMonadError)
 
 import           Pos.Chain.Block (Block, Blund, HasSlogGState,
                      LastSlotInfo (..), MainBlock, SlogUndo (..),
-                     genBlockLeaders, headerHash, mainBlockLeaderKey,
-                     mainBlockSlot, prevBlockL, verifyBlocks)
+                     genBlockLeaders, headerHash, headerHashG,
+                     mainBlockLeaderKey, mainBlockSlot, prevBlockL, verifyBlocks)
 import           Pos.Chain.Genesis as Genesis (Config (..), configEpochSlots,
                      configK)
 import           Pos.Chain.Txp (TxValidationRules (..))
@@ -267,7 +267,10 @@ slogApplyBlocks nm k (ShouldCallBListener callBListener) blunds = do
         newestDifficulty = newestBlock ^. difficultyL
     let putTip = SomeBatchOp $ GS.PutTip $ headerHash newestBlock
     lastSlots <- slogGetLastSlots
-    slogPutLastSlots (newLastSlots lastSlots)
+    -- Yes, doing this here duplicates the 'SomeBatchOp (blockExtraBatch lastSlots)'
+    -- operation below, but if we don't have both, either the generator tests or
+    -- syncing mainnet fails.
+    slogPutLastSlots $ newLastSlots lastSlots
     putDifficulty <- GS.getMaxSeenDifficulty <&> \x ->
         SomeBatchOp [GS.PutMaxSeenDifficulty newestDifficulty
                         | newestDifficulty > x]
@@ -275,23 +278,30 @@ slogApplyBlocks nm k (ShouldCallBListener callBListener) blunds = do
         [ putTip
         , putDifficulty
         , bListenerBatch
-        ]
+        , SomeBatchOp (blockExtraBatch lastSlots) ]
   where
     blocks = fmap fst blunds
+    forwardLinks = map (view prevBlockL &&& view headerHashG) $ toList blocks
+    forwardLinksBatch = map (uncurry GS.AddForwardLink) forwardLinks
+    inMainBatch =
+        toList $
+        fmap (GS.SetInMainChain True . view headerHashG . fst) blunds
+
     newSlots :: [LastSlotInfo]
     newSlots = mapMaybe (toLastSlotInfo (kEpochSlots k)) $ toList blocks
 
-    newLastSlots lastSlots =
-        lastSlots & _Wrapped %~ updateLastSlots
-
+    newLastSlots lastSlots = lastSlots & _Wrapped %~ updateLastSlots
+    knownSlotsBatch lastSlots
+        | null newSlots = []
+        | otherwise = [GS.SetLastSlots $ newLastSlots lastSlots]
     -- Slots are in 'OldestFirst' order. So we put new slots to the
     -- end and drop old slots from the beginning.
     updateLastSlots lastSlots =
         leaveAtMostN (fromIntegral k) (lastSlots ++ newSlots)
-
     leaveAtMostN :: Int -> [a] -> [a]
     leaveAtMostN n lst = drop (length lst - n) lst
-
+    blockExtraBatch lastSlots =
+        mconcat [knownSlotsBatch lastSlots, forwardLinksBatch, inMainBatch]
 
 newtype BypassSecurityCheck = BypassSecurityCheck Bool
 
@@ -345,18 +355,23 @@ slogRollbackBlocks genesisConfig (BypassSecurityCheck bypassSecurity) (ShouldCal
             SomeBatchOp $ GS.PutTip $
             (NE.last $ getNewestFirst blunds) ^. prevBlockL
     lastSlots <- slogGetLastSlots
+    -- Yes, doing this here duplicates the 'SomeBatchOp (blockExtraBatch lastSlots)'
+    -- operation below, but if we don't have both, either the generator tests or
+    -- syncing mainnet fails.
     slogPutLastSlots (newLastSlots lastSlots)
     return $
         SomeBatchOp
-            [putTip, bListenerBatch]
+            [putTip, bListenerBatch, SomeBatchOp (blockExtraBatch lastSlots)]
   where
     blocks = fmap fst blunds
+    inMainBatch =
+        map (GS.SetInMainChain False . view headerHashG) $ toList blocks
+    forwardLinksBatch =
+        map (GS.RemoveForwardLink . view prevBlockL) $ toList blocks
 
     lastSlotsToPrepend :: [LastSlotInfo]
     lastSlotsToPrepend =
-        getOldestFirst
-            . OldestFirst
-            . mapMaybe (toLastSlotInfo (configEpochSlots genesisConfig) . fst)
+        mapMaybe (toLastSlotInfo (configEpochSlots genesisConfig) . fst)
             $ toList (toOldestFirst blunds)
 
     newLastSlots lastSlots = lastSlots & _Wrapped %~ updateLastSlots
@@ -373,10 +388,12 @@ slogRollbackBlocks genesisConfig (BypassSecurityCheck bypassSecurity) (ShouldCal
 
     updateLastSlots :: [LastSlotInfo] -> [LastSlotInfo]
     updateLastSlots lastSlots =
-        getOldestFirst
-            . OldestFirst
-            . dropEnd (length $ filter isRight $ toList blocks) $
-                lastSlots ++ lastSlotsToPrepend
+        dropEnd (length $ filter isRight $ toList blocks) $
+        lastSlotsToPrepend ++
+        lastSlots
+    blockExtraBatch lastSlots =
+        GS.SetLastSlots (newLastSlots lastSlots) :
+        mconcat [forwardLinksBatch, inMainBatch]
 
 dropEnd :: Int -> [a] -> [a]
 dropEnd n xs = take (length xs - n) xs
