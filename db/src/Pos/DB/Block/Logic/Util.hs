@@ -32,12 +32,13 @@ import           Pos.Core.Chrono (NE, NewestFirst (..), OldestFirst (..))
 import           Pos.Core.Exception (reportFatalError)
 import           Pos.Core.Slotting (MonadSlots (..), getCurrentSlotFlat,
                      slotFromTimestamp)
+import           Pos.Crypto (mediumHashF)
 import           Pos.DB.Block.GState.BlockExtra (isBlockInMainChain)
 import           Pos.DB.Block.Slog.Context (slogGetLastSlots)
 import qualified Pos.DB.BlockIndex as DB
 import           Pos.DB.Class (MonadDBRead, MonadBlockDBRead)
 import           Pos.Util (_neHead)
-import           Pos.Util.Wlog (WithLogger)
+import           Pos.Util.Wlog (CanLog, HasLoggerName, WithLogger, logDebug)
 
 -- | Find LCA of headers list and main chain, including oldest
 -- header's parent hash. Acts as it would iterate from newest to
@@ -47,11 +48,12 @@ import           Pos.Util.Wlog (WithLogger)
 -- Though, usually in this method oldest header is LCA, so it can be
 -- optimized by traversing from older to newer.
 lcaWithMainChain
-    :: ( MonadBlockDBRead m )
+    :: ( CanLog m, HasLoggerName m, MonadBlockDBRead m )
     => OldestFirst NE BlockHeader -> m (Maybe HeaderHash)
-lcaWithMainChain headers =
+lcaWithMainChain headers = do
+    logDebug $ sformat ("Oldest parent: " % mediumHashF) oldestParent
     lcaProceed Nothing $
-    oldestParent <| fmap headerHash (getOldestFirst headers)
+        oldestParent <| fmap headerHash (getOldestFirst headers)
   where
     oldestParent :: HeaderHash
     oldestParent = headers ^. _Wrapped . _neHead . prevBlockL
