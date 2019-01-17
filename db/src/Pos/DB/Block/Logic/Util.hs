@@ -21,7 +21,7 @@ import           Control.Lens (_Wrapped)
 import           Data.List (findIndex)
 import           Data.List.NonEmpty ((<|))
 import qualified Data.List.NonEmpty as NE
-import           Formatting (int, sformat, (%))
+import           Formatting (int, sformat, shown, (%))
 
 import           Pos.Chain.Block (BlockHeader, HasBlockConfiguration,
                      HasSlogGState, HeaderHash, LastSlotInfo (..), fixedTimeCQ,
@@ -59,6 +59,7 @@ lcaWithMainChain headers = do
     oldestParent = headers ^. _Wrapped . _neHead . prevBlockL
     lcaProceed prevValue (h :| others) = do
         inMain <- isBlockInMainChain h
+        logDebug $ sformat ("InMain: " % mediumHashF % ": " % shown) h inMain
         case (others, inMain) of
             (_, False)   -> pure prevValue
             ([], True)   -> pure $ Just h
