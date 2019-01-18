@@ -26,7 +26,7 @@ import           Universum hiding (init)
 
 import           Data.Conduit (ConduitT, yield)
 import qualified Database.RocksDB as Rocks
-import           Formatting (Format, bprint, build, later, (%), sformat, text)
+import           Formatting (Format, bprint, build, later, (%), sformat, text, int, shown)
 import           Serokell.Util.Text (listJson)
 
 import           Pos.Binary.Class (serialize')
@@ -34,7 +34,7 @@ import           Pos.Chain.Block (Block, BlockHeader (..), HasHeaderHash, Header
                      LastBlkSlots, LastSlotInfo (..), prevBlockL, headerHash, mainHeaderLeaderKey, noLastBlkSlots)
 import           Pos.Chain.Genesis (GenesisHash (..), configEpochSlots)
 import qualified Pos.Chain.Genesis as Genesis
-import           Pos.Core (FlatSlotId, SlotCount, flattenEpochOrSlot,
+import           Pos.Core (EpochOrSlot (..), FlatSlotId, SlotCount, flattenEpochOrSlot,
                      getEpochOrSlot, slotIdF, unflattenSlotId)
 import           Pos.Core.Chrono (OldestFirst (..), NewestFirst (..), toNewestFirst)
 import           Pos.Crypto (PublicKey, shortHashF)
@@ -124,7 +124,9 @@ convertLastSlots eslots fids = do
         xs@(x:_) -> do
             th <- getTipHeader
             when (flattenEpochOrSlot eslots (getEpochOrSlot th) /= x) $
-                throwM $ DBMalformed "Pos.DB.Block.GState.BlockExtra.convertLastSlots: tip mismatch"
+                throwM . DBMalformed $
+                    sformat ("Pos.DB.Block.GState.BlockExtra.convertLastSlots: tip mismatch " % int % " /= " % int % " " % shown % " " % shown)
+                        (flattenEpochOrSlot eslots $ getEpochOrSlot th) x (isRight . unEpochOrSlot $ getEpochOrSlot th) xs
             ys <- OldestFirst <$> convert th xs []
             when (map lsiFlatSlotId ys /= fids) $
                 throwM . DBMalformed $ sformat

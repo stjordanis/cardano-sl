@@ -274,11 +274,14 @@ slogApplyBlocks nm k (ShouldCallBListener callBListener) blunds = do
     putDifficulty <- GS.getMaxSeenDifficulty <&> \x ->
         SomeBatchOp [GS.PutMaxSeenDifficulty newestDifficulty
                         | newestDifficulty > x]
-    return $ SomeBatchOp
+    return $ SomeBatchOp $
         [ putTip
         , putDifficulty
         , bListenerBatch
-        , SomeBatchOp (blockExtraBatch lastSlots) ]
+        ] ++
+        if extraBatchOP
+            then [SomeBatchOp (blockExtraBatch lastSlots) ]
+            else []
   where
     blocks = fmap fst blunds
     forwardLinks = map (view prevBlockL &&& view headerHashG) $ toList blocks
@@ -360,8 +363,11 @@ slogRollbackBlocks genesisConfig (BypassSecurityCheck bypassSecurity) (ShouldCal
     -- syncing mainnet fails.
     slogPutLastSlots (newLastSlots lastSlots)
     return $
-        SomeBatchOp
-            [putTip, bListenerBatch, SomeBatchOp (blockExtraBatch lastSlots)]
+        SomeBatchOp $
+            [putTip, bListenerBatch] ++
+            if extraBatchOP
+                then [SomeBatchOp (blockExtraBatch lastSlots)]
+                else []
   where
     blocks = fmap fst blunds
     inMainBatch =
@@ -394,6 +400,9 @@ slogRollbackBlocks genesisConfig (BypassSecurityCheck bypassSecurity) (ShouldCal
     blockExtraBatch lastSlots =
         GS.SetLastSlots (newLastSlots lastSlots) :
         mconcat [forwardLinksBatch, inMainBatch]
+
+extraBatchOP :: Bool
+extraBatchOP = True
 
 dropEnd :: Int -> [a] -> [a]
 dropEnd n xs = take (length xs - n) xs
