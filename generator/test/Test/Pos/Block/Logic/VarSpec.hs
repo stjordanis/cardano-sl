@@ -18,7 +18,7 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Ratio as Ratio
 import           Data.Semigroup ((<>))
 import           Test.Hspec (Spec, beforeAll_, describe)
-import           Test.Hspec.Runner (hspec)
+import           Test.Hspec.Runner (hspecWith, defaultConfig, configQuickCheckSeed)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck.Gen (Gen (MkGen))
 import           Test.QuickCheck.Monadic (assert, pick, pre)
@@ -41,6 +41,7 @@ import           Pos.Generator.BlockEvent.DSL (BlockApplyResult (..),
                      Path, byChance, emitBlockApply,
                      emitBlockRollback, enrichWithSnapshotChecking,
                      pathSequence, runBlockEventGenT)
+import           Pos.Generator.BlockEvent (BlockScenario' (..), CheckCount (..))
 import qualified Pos.GState as GS
 import           Pos.Launcher (HasConfigurations)
 import           Pos.Util.Wlog (setupTestLogging)
@@ -78,8 +79,56 @@ spec = beforeAll_ setupTestLogging $ withStaticConfigurations $ \txpConfig _ ->
 runTest :: IO ()
 runTest = do
     setupTestLogging
-    withStaticConfigurations $ \txpConfig _ -> hspec $
-        describe "Erik: Successful sequence" $ blockEventSuccessSpec txpConfig
+    withStaticConfigurations $ \txpConfig _ -> hspecWith (defaultConfig { configQuickCheckSeed = Just 10000000000 }) $
+        describe "Erik: Successful sequence" $
+            blockPropertySpec blockEventSuccessDesc $ \genesisConfig -> do
+                (scenario, checkCount) <- genScenario genesisConfig
+                                                        txpConfig
+                                                        (genSuccessWithForks genesisConfig)
+                -- let scenario = BlockScenario . List.take 5 $ unBlockScenario scenarioX
+                when (checkCount <= 0) $ stopProperty $
+                    "No checks were generated, this is a bug in the test suite: " <>
+                    prettyScenario scenario
+
+                putTextLn $ prettyScenario scenario
+
+                runBlockScenarioAndVerify genesisConfig txpConfig scenario
+  where
+    blockEventSuccessDesc =
+        "a sequence of interleaved block applications and rollbacks " <>
+        "results in the original state of the blockchain"
+
+    genScenario
+        :: HasConfigurations
+        => Genesis.Config
+        -> TxpConfiguration
+        -> BlockEventGenT QCGen BlockTestMode ()
+        -> BlockProperty (BlockScenario, CheckCount)
+    genScenario genesisConfig txpConfig m = do
+        (scenario, checkCount) <- enrichWithSnapshotChecking <$> shortblockPropertyScenarioGen
+                                                                    genesisConfig
+                                                                    txpConfig
+                                                                    m
+
+        if length (unBlockScenario scenario) > 12
+            then genScenario genesisConfig txpConfig m
+            else pure (scenario, checkCount)
+
+    shortblockPropertyScenarioGen
+        :: HasConfigurations
+        => Genesis.Config
+        -> TxpConfiguration
+        -> BlockEventGenT QCGen BlockTestMode ()
+        -> BlockProperty BlockScenario
+    shortblockPropertyScenarioGen genesisConfig txpConfig m = do
+        allSecrets <- getAllSecrets
+        g <- pick $ MkGen $ \qc _ -> qc
+        lift $ flip evalRandT g $ runBlockEventGenT genesisConfig
+                                                    txpConfig
+                                                    allSecrets
+                                                    (configBootStakeholders genesisConfig)
+                                                    m
+
 
 ----------------------------------------------------------------------------
 -- verifyBlocksPrefix
@@ -303,7 +352,7 @@ genSuccessWithForks genesisConfig = do
                             emitBlockRollback BlockRollbackSuccess before
                             generateFork basePath after
                     else do
-                        advance <- getRandomR (1, wiggleRoom `div` 4)
+                        advance <- getRandomR (1, wiggleRoom)
                         relPaths <- OldestFirst <$> replicateM advance generateRelativePath1
                         whenJust (nonEmptyOldestFirst relPaths) $ \relPaths' -> do
                             let
