@@ -17,7 +17,7 @@ import           Formatting (int, sformat, (%))
 import qualified System.Metrics as Ekg
 
 import           Pos.Chain.Block (HasBlockConfiguration, HasSlogGState (..),
-                     LastBlkSlots, SlogContext (..), SlogGState (..),
+                     LastBlkSlots, LastSlotInfo (..), SlogContext (..), SlogGState (..),
                      fixedTimeCQSec, sgsLastBlkSlots)
 import           Pos.Core (BlockCount)
 import           Pos.Chain.Genesis as Genesis (Config (..))
@@ -26,6 +26,8 @@ import           Pos.Core.Reporting (MetricMonitorState, mkMetricMonitorState)
 import           Pos.DB.Block.GState.BlockExtra (getLastSlots, putLastSlots,
                      rollbackLastSlots)
 import           Pos.DB.Class (MonadDB, MonadDBRead)
+
+import           Serokell.Util (listJson)
 
 -- | Make new 'SlogGState' using data from DB.
 mkSlogGState :: (MonadIO m, MonadDBRead m) => m SlogGState
@@ -73,10 +75,13 @@ cloneSlogGState SlogGState {..} =
 -- | Read 'LastBlkSlots' from in-memory state.
 slogGetLastSlots ::
        (MonadReader ctx m, HasSlogGState ctx, MonadIO m) => m LastBlkSlots
-slogGetLastSlots =
+slogGetLastSlots = do
     -- 'LastBlkSlots' is stored in two places, the DB and an 'IORef' so just
     -- grab the copy in the 'IORef'.
-    readIORef =<< view (slogGState . sgsLastBlkSlots)
+    xs <- readIORef =<< view (slogGState . sgsLastBlkSlots)
+    when False $
+        putTextLn $ sformat ("slogGetLastSlots " % listJson) (map lsiFlatSlotId xs)
+    pure xs
 
 -- | Update 'LastBlkSlots' in 'SlogContext'.
 slogPutLastSlots ::
@@ -86,6 +91,8 @@ slogPutLastSlots ::
 slogPutLastSlots slots = do
     -- If we set 'LastBlkSlots' we set it in both the DB and the 'IORef'.
     view (slogGState . sgsLastBlkSlots) >>= flip writeIORef slots
+    when False $
+        putTextLn $ sformat ("slogPutLastSlots " % listJson) (map lsiFlatSlotId slots)
     putLastSlots slots
 
 -- | Roll back the specified count of 'LastBlkSlots'.
@@ -96,4 +103,6 @@ slogRollbackLastSlots genesisConfig count = do
     -- Roll back in the DB, then read the DB and set the 'IORef'.
     rollbackLastSlots genesisConfig count
     slots <- getLastSlots
+    when False $
+        putTextLn $ sformat ("slogRollbackLastSlots " % listJson) (map lsiFlatSlotId slots)
     view (slogGState . sgsLastBlkSlots) >>= flip writeIORef slots
