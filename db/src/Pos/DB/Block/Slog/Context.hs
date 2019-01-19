@@ -13,13 +13,14 @@ module Pos.DB.Block.Slog.Context
 
 import           Universum
 
-import           Formatting (int, sformat, (%))
+import qualified Data.List as List
+import           Formatting (int, sformat, stext, (%))
 import qualified System.Metrics as Ekg
 
 import           Pos.Chain.Block (HasBlockConfiguration, HasSlogGState (..),
                      LastBlkSlots, LastSlotInfo (..), SlogContext (..), SlogGState (..),
                      fixedTimeCQSec, sgsLastBlkSlots)
-import           Pos.Core (BlockCount)
+import           Pos.Core (BlockCount, FlatSlotId)
 import           Pos.Chain.Genesis as Genesis (Config (..))
 import           Pos.Core.Metrics.Constants (withCardanoNamespace)
 import           Pos.Core.Reporting (MetricMonitorState, mkMetricMonitorState)
@@ -79,8 +80,7 @@ slogGetLastSlots = do
     -- 'LastBlkSlots' is stored in two places, the DB and an 'IORef' so just
     -- grab the copy in the 'IORef'.
     xs <- readIORef =<< view (slogGState . sgsLastBlkSlots)
-    when False $
-        putTextLn $ sformat ("slogGetLastSlots " % listJson) (map lsiFlatSlotId xs)
+    validateFlatSlotIds "slogGetLastSlots" (toList $ map lsiFlatSlotId xs)
     pure xs
 
 -- | Update 'LastBlkSlots' in 'SlogContext'.
@@ -91,8 +91,7 @@ slogPutLastSlots ::
 slogPutLastSlots slots = do
     -- If we set 'LastBlkSlots' we set it in both the DB and the 'IORef'.
     view (slogGState . sgsLastBlkSlots) >>= flip writeIORef slots
-    when False $
-        putTextLn $ sformat ("slogPutLastSlots " % listJson) (map lsiFlatSlotId slots)
+    validateFlatSlotIds "slogPutLastSlots" (toList $ map lsiFlatSlotId slots)
     putLastSlots slots
 
 -- | Roll back the specified count of 'LastBlkSlots'.
@@ -103,6 +102,11 @@ slogRollbackLastSlots genesisConfig count = do
     -- Roll back in the DB, then read the DB and set the 'IORef'.
     rollbackLastSlots genesisConfig count
     slots <- getLastSlots
-    when False $
-        putTextLn $ sformat ("slogRollbackLastSlots " % listJson) (map lsiFlatSlotId slots)
+    validateFlatSlotIds "slogRollbackLastSlots" (toList $ map lsiFlatSlotId slots)
     view (slogGState . sgsLastBlkSlots) >>= flip writeIORef slots
+
+
+validateFlatSlotIds :: MonadIO m => Text -> [FlatSlotId] -> m ()
+validateFlatSlotIds fname xs =
+    when (List.sort xs /= xs) $
+        error $ sformat (stext % " " % listJson) fname xs
