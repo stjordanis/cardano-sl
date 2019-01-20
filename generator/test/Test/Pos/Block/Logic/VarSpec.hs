@@ -12,13 +12,15 @@ import           Universum hiding ((<>))
 
 import           Control.Monad.Random.Strict (MonadRandom (..), RandomGen,
                      evalRandT, uniform)
-import           Data.List (span)
+import qualified Data.List as List
 import           Data.List.NonEmpty (NonEmpty ((:|)))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Ratio as Ratio
 import           Data.Semigroup ((<>))
+import           Formatting -- (sformat, build, (%))
+import           Serokell.Util (listJson)
 import           Test.Hspec (Spec, beforeAll_, describe)
-import           Test.Hspec.Runner (hspecWith, defaultConfig, configQuickCheckSeed)
+import           Test.Hspec.Runner (hspec) -- With, defaultConfig, configQuickCheckSeed)
 import           Test.Hspec.QuickCheck (modifyMaxSuccess)
 import           Test.QuickCheck.Gen (Gen (MkGen))
 import           Test.QuickCheck.Monadic (assert, pick, pre)
@@ -29,7 +31,7 @@ import           Pos.Chain.Genesis as Genesis
 import           Pos.Chain.Txp
 import           Pos.Core (ProtocolConstants (..), pcBlkSecurityParam)
 import           Pos.Core.Chrono (NE, NewestFirst (..), OldestFirst (..),
-                     nonEmptyNewestFirst, nonEmptyOldestFirst,
+                     nonEmptyNewestFirst, nonEmptyOldestFirst, toNewestFirst,
                      splitAtNewestFirst, toNewestFirst, _NewestFirst)
 import           Pos.Core.Slotting
 import           Pos.DB.Block (verifyAndApplyBlocks, verifyBlocksPrefix)
@@ -41,7 +43,7 @@ import           Pos.Generator.BlockEvent.DSL (BlockApplyResult (..),
                      Path, byChance, emitBlockApply,
                      emitBlockRollback, enrichWithSnapshotChecking,
                      pathSequence, runBlockEventGenT)
-import           Pos.Generator.BlockEvent (BlockScenario' (..), CheckCount (..))
+import           Pos.Generator.BlockEvent (BlockScenario' (..), BlockEvent' (..), BlockEventApply' (..), BlockEventRollback' (..), CheckCount (..))
 import qualified Pos.GState as GS
 import           Pos.Launcher (HasConfigurations)
 import           Pos.Util.Wlog (setupTestLogging)
@@ -79,8 +81,8 @@ spec = beforeAll_ setupTestLogging $ withStaticConfigurations $ \txpConfig _ ->
 runTest :: IO ()
 runTest = do
     setupTestLogging
-    withStaticConfigurations $ \txpConfig _ -> hspecWith (defaultConfig { configQuickCheckSeed = Just 10000000000 }) $
-        describe "Erik: Successful sequence" $
+    withStaticConfigurations $ \txpConfig _ -> hspec $ -- With (defaultConfig { configQuickCheckSeed = Just 10000000001234567890 }) $
+        describe "\nErik: Successful sequence\n\n" $
             blockPropertySpec blockEventSuccessDesc $ \genesisConfig -> do
                 (scenario, checkCount) <- genScenario genesisConfig
                                                         txpConfig
@@ -90,6 +92,7 @@ runTest = do
                     "No checks were generated, this is a bug in the test suite: " <>
                     prettyScenario scenario
 
+                putTextLn ""
                 putTextLn $ prettyScenario scenario
 
                 runBlockScenarioAndVerify genesisConfig txpConfig scenario
@@ -105,30 +108,44 @@ runTest = do
         -> BlockEventGenT QCGen BlockTestMode ()
         -> BlockProperty (BlockScenario, CheckCount)
     genScenario genesisConfig txpConfig m = do
-        (scenario, checkCount) <- enrichWithSnapshotChecking <$> shortblockPropertyScenarioGen
-                                                                    genesisConfig
-                                                                    txpConfig
-                                                                    m
+        scenario <- blockPropertyScenarioGen genesisConfig txpConfig m
 
-        if length (unBlockScenario scenario) > 12
-            then genScenario genesisConfig txpConfig m
-            else pure (scenario, checkCount)
+        if  | not (uniqueBlockApply scenario) -> do
+                putTextLn $ sformat ("reject " % stext) (prettyScenario scenario)
+                genScenario genesisConfig txpConfig m
 
-    shortblockPropertyScenarioGen
-        :: HasConfigurations
-        => Genesis.Config
-        -> TxpConfiguration
-        -> BlockEventGenT QCGen BlockTestMode ()
-        -> BlockProperty BlockScenario
-    shortblockPropertyScenarioGen genesisConfig txpConfig m = do
-        allSecrets <- getAllSecrets
-        g <- pick $ MkGen $ \qc _ -> qc
-        lift $ flip evalRandT g $ runBlockEventGenT genesisConfig
-                                                    txpConfig
-                                                    allSecrets
-                                                    (configBootStakeholders genesisConfig)
-                                                    m
+            -- | length (unBlockScenario scenario) > 10 -> genScenario genesisConfig txpConfig m
 
+            | otherwise -> pure $ enrichWithSnapshotChecking scenario
+
+-- | Return 'True' if the applied blocks (taking into account rollbacks) results
+-- in a unique set of block hashes. The generator tests will fail if the
+-- generated blocks (accounting for rollback) are not unique.
+uniqueBlockApply :: BlockScenario -> Bool
+uniqueBlockApply (BlockScenario bs) =
+    let ys = foldScenario [] bs in
+    List.sort ys == ordNub ys
+  where
+    foldScenario :: [HeaderHash] -> [BlockEvent' Blund] -> [HeaderHash]
+    foldScenario !acc [] = acc
+    foldScenario !acc (x:xs) =
+        case x of
+            BlkEvApply ea ->
+                foldScenario ((map headerHash . toList $ toNewestFirst (_beaInput ea)) ++ acc) xs
+            BlkEvRollback re ->
+                foldScenario (rollback (map headerHash . toList $ getNewestFirst (_berInput re)) acc) xs
+            BlkEvSnap _ ->
+                foldScenario acc xs
+
+    rollback :: [HeaderHash] -> [HeaderHash] -> [HeaderHash]
+    rollback _ [] = []
+    rollback [] acc = acc
+    rollback (r:rs) (x:xs) =
+        if (r == x)
+            then rollback rs xs
+            else error $ sformat
+                    ("uniqueBlockApply: rollback failed " % listJson % " " % listJson)
+                        (r:rs) (x:xs)
 
 ----------------------------------------------------------------------------
 -- verifyBlocksPrefix
@@ -185,7 +202,7 @@ verifyValidBlocks genesisConfig txpConfig = do
             -- impossible because of precondition (see 'pre' above)
             [] -> error "verifyValidBlocks: impossible"
             (block0:otherBlocks) ->
-                let (otherBlocks', _) = span isRight otherBlocks
+                let (otherBlocks', _) = List.span isRight otherBlocks
                 in block0 :| otherBlocks'
 
     verRes <- lift $ satisfySlotCheck blocksToVerify $ verifyBlocksPrefix
