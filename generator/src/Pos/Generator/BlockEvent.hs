@@ -90,7 +90,7 @@ instance Show PathSegment where
 --   An empty path does not point at any block, don't use it on its own! (but
 --   it's a valid 'mempty')
 newtype Path = Path (Seq PathSegment)
-    deriving (Eq, Ord, Semigroup, Monoid)
+    deriving (Eq, Ord, Semigroup, Monoid, Show)
 
 instance IsString Path where
     fromString = Path . Seq.singleton . fromString
