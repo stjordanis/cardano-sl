@@ -92,8 +92,9 @@ runTest = do
                     "No checks were generated, this is a bug in the test suite: " <>
                     prettyScenario scenario
 
-                putTextLn ""
-                putTextLn $ prettyScenario scenario
+                when False $ do
+                    putTextLn ""
+                    putTextLn $ prettyScenario scenario
 
                 runBlockScenarioAndVerify genesisConfig txpConfig scenario
   where
@@ -110,11 +111,8 @@ runTest = do
     genScenario genesisConfig txpConfig m = do
         scenario <- blockPropertyScenarioGen genesisConfig txpConfig m
 
-        if  | not (uniqueBlockApply scenario) -> do
-                putTextLn $ sformat ("reject " % stext) (prettyScenario scenario)
+        if  | not (uniqueBlockApply scenario) ->
                 genScenario genesisConfig txpConfig m
-
-            -- | length (unBlockScenario scenario) > 10 -> genScenario genesisConfig txpConfig m
 
             | otherwise -> pure $ enrichWithSnapshotChecking scenario
 
@@ -124,10 +122,10 @@ runTest = do
 uniqueBlockApply :: BlockScenario -> Bool
 uniqueBlockApply (BlockScenario bs) =
     let ys = foldScenario [] bs in
-    List.sort ys == ordNub ys
+    ys == ordNub ys
   where
     foldScenario :: [HeaderHash] -> [BlockEvent' Blund] -> [HeaderHash]
-    foldScenario !acc [] = acc
+    foldScenario !acc [] = List.sort acc
     foldScenario !acc (x:xs) =
         case x of
             BlkEvApply ea ->

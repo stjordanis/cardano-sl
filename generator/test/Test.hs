@@ -9,7 +9,7 @@ import           Test.Pos.Block.Logic.VarSpec (runTest)
 
 main :: IO ()
 main =
-    if False
+    if True
         then do
             parallelizeAllCores
             putText $ "default configuration: " <> show defaultTestConf
