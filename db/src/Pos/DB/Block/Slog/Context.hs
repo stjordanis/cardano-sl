@@ -29,6 +29,7 @@ import           Pos.DB.Block.GState.BlockExtra (getLastSlots, putLastSlots,
 import           Pos.DB.Class (MonadDB, MonadDBRead)
 
 import           Serokell.Util (listJson)
+import           Pos.Util.Wlog (CanLog, HasLoggerName)
 
 -- | Make new 'SlogGState' using data from DB.
 mkSlogGState :: (MonadIO m, MonadDBRead m) => m SlogGState
@@ -96,7 +97,7 @@ slogPutLastSlots slots = do
 
 -- | Roll back the specified count of 'LastBlkSlots'.
 slogRollbackLastSlots
-    :: (MonadReader ctx m, MonadDB m, HasSlogGState ctx, MonadIO m)
+    :: (CanLog m, HasLoggerName m, MonadReader ctx m, MonadDB m, HasSlogGState ctx, MonadIO m)
     => Genesis.Config -> Int -> m ()
 slogRollbackLastSlots genesisConfig count = do
     -- Roll back in the DB, then read the DB and set the 'IORef'.

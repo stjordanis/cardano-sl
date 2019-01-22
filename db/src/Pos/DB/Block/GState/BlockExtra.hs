@@ -43,6 +43,7 @@ import           Pos.DB (DBError (..), MonadDB, MonadDBRead (..),
 import           Pos.DB.Class (MonadBlockDBRead, SerializedBlock, getBlock)
 import           Pos.DB.GState.Common (gsGetBi, gsPutBi)
 import           Pos.Util.Util (maybeThrow)
+import           Pos.Util.Wlog (CanLog, HasLoggerName, logDebug)
 
 ----------------------------------------------------------------------------
 -- Getters
@@ -77,7 +78,7 @@ putLastSlots =
 -- than `k` (security parameter) entries in the list. However, this is fine
 -- because rollbacks only happen when to remove a short chain and then
 -- immediately add a longer chain.
-rollbackLastSlots :: forall m . (MonadIO m, MonadDB m) => Genesis.Config -> Int -> m ()
+rollbackLastSlots :: forall m . (CanLog m, HasLoggerName m, MonadDB m) => Genesis.Config -> Int -> m ()
 rollbackLastSlots genesisConfig count = do
     gsGetBi lastSlotsKey2 >>= \case
         Nothing ->
@@ -89,6 +90,7 @@ rollbackLastSlots genesisConfig count = do
             -- This means the easiest way to do this rollback is to extract the
             -- 'FlatSlotId's from the 'LastSlotInfo's, and then reuse 'convertLastSlots'.
             let newSlots = OldestFirst . mapMaybe subtractCount $ getOldestFirst slots
+            logDebug "rollbackLastSlots: About to call convertLastSlots"
             convertLastSlots (configEpochSlots genesisConfig) newSlots
                 >>= gsPutBi lastSlotsKey2
 
