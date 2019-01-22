@@ -21,6 +21,22 @@ module Pos.Launcher.Configuration
 
        , dumpGenesisData
 
+       , ccGenesis_L
+       , ccNtp_L
+       , ccUpdate_L
+       , ccSsc_L
+       , ccDlg_L
+       , ccTxp_L
+       , ccBlock_L
+       , ccNode_L
+       , ccWallet_L
+       , ccReqNetMagic_L
+
+       , cfoFilePath_L
+       , cfoKey_L
+       , cfoSystemStart_L
+       , cfoSeed_L
+
        -- Exposed mostly for testing.
        , readAssetLockedSrcAddrs
        ) where
@@ -28,7 +44,8 @@ module Pos.Launcher.Configuration
 import           Universum
 
 import           Data.Aeson (FromJSON (..), ToJSON (..), genericParseJSON,
-                     genericToJSON, withObject, (.!=), (.:), (.:?))
+                     genericToJSON, object, withObject, (.!=), (.:), (.:?),
+                     (.=))
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Default (Default (..))
 import qualified Data.HashMap.Strict as HM
@@ -44,6 +61,7 @@ import           System.FilePath (takeDirectory)
 
 import           Ntp.Client (NtpConfiguration)
 
+import           Control.Lens (makeLensesWith)
 import           Pos.Chain.Genesis as Genesis (Config (..), GenesisData (..),
                      StaticConfig, canonicalGenesisJson,
                      mkConfigFromStaticConfig, prettyGenesisJson)
@@ -52,6 +70,7 @@ import           Pos.Core (Address, EpochIndex (..), EpochOrSlot (..),
 import           Pos.Core.Conc (currentTime)
 import           Pos.Core.Slotting (Timestamp (..))
 import           Pos.Crypto (RequiresNetworkMagic (..))
+import           Pos.Util (postfixLFields)
 import           Pos.Util.AssertMode (inAssertMode)
 import           Pos.Util.Config (parseYamlConfig)
 import           Pos.Util.Wlog (WithLogger, logInfo)
@@ -129,7 +148,18 @@ instance FromJSON Configuration where
         pure $ Configuration {..}
 
 instance ToJSON Configuration where
-     toJSON = genericToJSON defaultOptions
+    toJSON (Configuration genesis ntp update ssc dlg txp block node wallet reqnetmagic) = object [
+        "genesis" .= genesis
+      , "ntp" .= ntp
+      , "update" .= update
+      , "ssc" .= ssc
+      , "dlg" .= dlg
+      , "txp" .= txp
+      , "block" .= block
+      , "node" .= node
+      , "wallet" .= wallet
+      , "requiresNetworkMagic" .= reqnetmagic
+      ]
 
 data WalletConfiguration = WalletConfiguration
     { ccThrottle :: !(Maybe ThrottleSettings)
@@ -186,6 +216,9 @@ data ConfigurationOptions = ConfigurationOptions
       -- this case it overrides one from configuration file.
     , cfoSeed        :: !(Maybe Integer)
     } deriving (Show)
+
+makeLensesWith postfixLFields ''Configuration
+makeLensesWith postfixLFields ''ConfigurationOptions
 
 instance FromJSON ConfigurationOptions where
     parseJSON = withObject "ConfigurationOptions" $ \o -> do
