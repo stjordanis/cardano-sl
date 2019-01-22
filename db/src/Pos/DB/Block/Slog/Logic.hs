@@ -32,7 +32,7 @@ import           Serokell.Util (Color (Red), colorize)
 import           Serokell.Util.Verify (formatAllErrors, verResToMonadError)
 
 import           Pos.Chain.Block (Block, Blund, HasSlogGState,
-                     LastBlkSlots, LastSlotInfo (..), MainBlock, SlogUndo (..),
+                     LastSlotInfo (..), MainBlock, SlogUndo (..),
                      genBlockLeaders, headerHash, headerHashG,
                      mainBlockLeaderKey, mainBlockSlot, prevBlockL, verifyBlocks)
 import           Pos.Chain.Genesis as Genesis (Config (..), configEpochSlots,
@@ -64,6 +64,7 @@ import           Pos.Util (_neHead, _neLast)
 import           Pos.Util.AssertMode (inAssertMode)
 import           Pos.Util.Util (HasLens', lensOf)
 import           Pos.Util.Wlog (WithLogger, logInfo)
+import           Serokell.Util (listJson)
 
 ----------------------------------------------------------------------------
 -- Helpers
@@ -270,7 +271,10 @@ slogApplyBlocks nm k (ShouldCallBListener callBListener) blunds = do
     -- Yes, doing this here duplicates the 'SomeBatchOp (blockExtraBatch lastSlots)'
     -- operation below, but if we don't have both, either the generator tests or
     -- syncing mainnet fails.
-    slogPutLastSlots $ newLastSlots lastSlots
+
+    when False $
+        putTextLn $ sformat ("\nPos.DB.Block.Slog.Logic.slogApplyBlocks " % listJson % "\n") (toList $ map lsiFlatSlotId lastSlots)
+    slogPutLastSlots "Pos.DB.Block.Slog.Logic.slogApplyBlocks" $ newLastSlots lastSlots
     putDifficulty <- GS.getMaxSeenDifficulty <&> \x ->
         SomeBatchOp [GS.PutMaxSeenDifficulty newestDifficulty
                         | newestDifficulty > x]
@@ -293,10 +297,10 @@ slogApplyBlocks nm k (ShouldCallBListener callBListener) blunds = do
     newSlots :: [LastSlotInfo]
     newSlots = mapMaybe (toLastSlotInfo (kEpochSlots k)) $ toList blocks
 
-    newLastSlots :: LastBlkSlots -> LastBlkSlots
+    newLastSlots :: OldestFirst [] LastSlotInfo -> OldestFirst [] LastSlotInfo
     newLastSlots lastSlots = lastSlots & _Wrapped %~ updateLastSlots
 
-    knownSlotsBatch :: LastBlkSlots -> [GS.BlockExtraOp]
+    knownSlotsBatch :: OldestFirst [] LastSlotInfo -> [GS.BlockExtraOp]
     knownSlotsBatch lastSlots
         | null newSlots = []
         | otherwise = [GS.SetLastSlots $ newLastSlots lastSlots]
@@ -310,7 +314,7 @@ slogApplyBlocks nm k (ShouldCallBListener callBListener) blunds = do
     leaveAtMostN :: Int -> [a] -> [a]
     leaveAtMostN n lst = drop (length lst - n) lst
 
-    blockExtraBatch :: LastBlkSlots -> [GS.BlockExtraOp]
+    blockExtraBatch :: OldestFirst [] LastSlotInfo -> [GS.BlockExtraOp]
     blockExtraBatch lastSlots =
         mconcat [knownSlotsBatch lastSlots, forwardLinksBatch, inMainBatch]
 
@@ -369,7 +373,7 @@ slogRollbackBlocks genesisConfig (BypassSecurityCheck bypassSecurity) (ShouldCal
     -- Yes, doing this here duplicates the 'SomeBatchOp (blockExtraBatch lastSlots)'
     -- operation below, but if we don't have both, either the generator tests or
     -- syncing mainnet fails.
-    slogPutLastSlots $ newLastSlots lastSlots
+    slogPutLastSlots "Pos.DB.Block.Slog.Logic.slogRollbackBlocks" $ newLastSlots lastSlots
     return $
         SomeBatchOp $
             [putTip, bListenerBatch] ++
@@ -388,7 +392,7 @@ slogRollbackBlocks genesisConfig (BypassSecurityCheck bypassSecurity) (ShouldCal
         mapMaybe (toLastSlotInfo (configEpochSlots genesisConfig) . fst)
             $ toList (toOldestFirst blunds)
 
-    newLastSlots :: LastBlkSlots -> LastBlkSlots
+    newLastSlots :: OldestFirst [] LastSlotInfo -> OldestFirst [] LastSlotInfo
     newLastSlots lastSlots = lastSlots & _Wrapped %~ updateLastSlots
     -- 'lastSlots' is what we currently store. It contains at most
     -- 'blkSecurityParam' slots. 'lastSlotsToAppend' are slots for
@@ -406,7 +410,7 @@ slogRollbackBlocks genesisConfig (BypassSecurityCheck bypassSecurity) (ShouldCal
         dropEnd (length $ filter isRight $ toList blocks) $
             lastSlots ++ lastSlotsToAppend
 
-    blockExtraBatch :: LastBlkSlots -> [GS.BlockExtraOp]
+    blockExtraBatch :: OldestFirst [] LastSlotInfo -> [GS.BlockExtraOp]
     blockExtraBatch lastSlots =
         GS.SetLastSlots (newLastSlots lastSlots) :
         mconcat [forwardLinksBatch, inMainBatch]

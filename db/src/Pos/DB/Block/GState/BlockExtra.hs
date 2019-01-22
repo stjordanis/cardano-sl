@@ -1,3 +1,4 @@
+{-# LANGUAGE MagicHash           #-}
 -- | Extra information for blocks.
 --   * Forward links.
 --   * InMainChain flags.
@@ -28,6 +29,9 @@ import           Data.Conduit (ConduitT, yield)
 import qualified Database.RocksDB as Rocks
 import           Formatting (Format, bprint, build, later, (%), sformat, text, int, shown)
 import           Serokell.Util.Text (listJson)
+import           System.IO (hFlush, stderr, stdout)
+import           System.Exit (ExitCode (..))
+import           System.Posix.Process (exitImmediately)
 
 import           Pos.Binary.Class (serialize')
 import           Pos.Chain.Block (Block, BlockHeader (..), HasHeaderHash, HeaderHash,
@@ -78,31 +82,63 @@ putLastSlots =
 -- than `k` (security parameter) entries in the list. However, this is fine
 -- because rollbacks only happen when to remove a short chain and then
 -- immediately add a longer chain.
-rollbackLastSlots :: forall m . (CanLog m, HasLoggerName m, MonadDB m) => Genesis.Config -> Int -> m ()
+rollbackLastSlots :: forall m . (CanLog m, HasLoggerName m, MonadIO m, MonadDB m) => Genesis.Config -> Int -> m ()
 rollbackLastSlots genesisConfig count = do
     gsGetBi lastSlotsKey2 >>= \case
         Nothing ->
             throwM (DBMalformed "rollbackLastSlots: Last slots v2 not found in the global state DB")
         Just (slots :: OldestFirst [] LastSlotInfo) -> do
+            thfsid <- flattenEpochOrSlot (configEpochSlots genesisConfig) . getEpochOrSlot <$> getTipHeader
+
+            newCount <-
+                case map lsiFlatSlotId $ getOldestFirst slots of
+                    [] -> pure (fromIntegral count :: Word64)
+                    xs@(x:_) ->
+                        case compare thfsid x of
+                            EQ -> pure $ fromIntegral count
+                            {-
+                            LT -> do
+                                putTextLn $ -- throwM . DBMalformed $
+                                    sformat ("Pos.DB.Block.GState.BlockExtra.rollbackLastSlots: "
+                                        % int % " " % int % " /= " % int % " " % int
+                                        )
+                                        count thfsid x (x - thfsid)
+                                pure $ (fromIntegral count) + (x - thfsid)
+                            -}
+                            cmp -> do
+                                putTextLn $ -- throwM . DBMalformed $
+                                    sformat ("Pos.DB.Block.GState.BlockExtra.rollbackLastSlots: tip mismatch "
+                                        % int % " " % shown % " " % int % "\n     " % listJson
+                                        )
+                                        thfsid cmp x xs
+
+                                liftIO $ do
+                                    hFlush stdout
+                                    hFlush stderr
+
+                                putTextLn "\n\n\nHere, hold my beer ...."
+                                liftIO $ exitImmediately (ExitFailure 42)
+                                pure $ fromIntegral count
+
             -- We want to roll back 'count' elements of the 'LastSlotInfo' but the
             -- 'LastSlotInfo' list doesn't have enough info to properly walk back
             -- along the chain.
             -- This means the easiest way to do this rollback is to extract the
             -- 'FlatSlotId's from the 'LastSlotInfo's, and then reuse 'convertLastSlots'.
-            let newSlots = OldestFirst . mapMaybe subtractCount $ getOldestFirst slots
-            logDebug "rollbackLastSlots: About to call convertLastSlots"
+            let newSlots = OldestFirst . mapMaybe (subtractCount newCount) $ getOldestFirst slots
+            logDebug "Pos.DB.Block.GState.BlockExtra.rollbackLastSlots: About to call convertLastSlots"
             convertLastSlots (configEpochSlots genesisConfig) newSlots
                 >>= gsPutBi lastSlotsKey2
 
   where
-    subtractCount :: LastSlotInfo -> Maybe FlatSlotId
-    subtractCount lsi
-        | lsiFlatSlotId lsi >= fromIntegral count = Just $ lsiFlatSlotId lsi - fromIntegral count
+    subtractCount :: Word64 -> LastSlotInfo -> Maybe FlatSlotId
+    subtractCount diff lsi
+        | lsiFlatSlotId lsi >= fromIntegral count = Just $ lsiFlatSlotId lsi - diff
         | otherwise = Nothing
 
 -- | This function acts as a one time conversion from version 1 to version 2
 -- of the `LastBlkSlots` data type.
-upgradeLastSlotsVersion :: forall m . MonadDB m => Genesis.Config -> m ()
+upgradeLastSlotsVersion :: forall m . (MonadDB m, MonadIO m) => Genesis.Config -> m ()
 upgradeLastSlotsVersion genesisConfig =
     gsGetBi oldLastSlotsKey >>= \case
         Nothing -> pure () -- Assume it has already been converted.
@@ -119,16 +155,27 @@ upgradeLastSlotsVersion genesisConfig =
 -- Convert a list of 'FlatSlotId' to 'LastSlotInfo' but ensure that the output
 -- list has at least 'eslots' entries if the chain is longer than 'eslots'
 -- in length.
-convertLastSlots :: MonadDB m => SlotCount -> OldestFirst [] FlatSlotId -> m (OldestFirst [] LastSlotInfo)
+convertLastSlots :: (MonadDB m, MonadIO m) => SlotCount -> OldestFirst [] FlatSlotId -> m (OldestFirst [] LastSlotInfo)
 convertLastSlots eslots fids = do
     case getNewestFirst $ toNewestFirst fids of
         [] -> pure $ OldestFirst []
         xs@(x:_) -> do
             th <- getTipHeader
-            when (flattenEpochOrSlot eslots (getEpochOrSlot th) /= x) $
-                throwM . DBMalformed $
-                    sformat ("Pos.DB.Block.GState.BlockExtra.convertLastSlots: tip mismatch " % int % " /= " % int % " " % shown % " " % shown)
-                        (flattenEpochOrSlot eslots $ getEpochOrSlot th) x (isRight . unEpochOrSlot $ getEpochOrSlot th) xs
+            let thfsid = flattenEpochOrSlot eslots $ getEpochOrSlot th
+            when (thfsid /= x) $ do
+                    putTextLn $ -- throwM . DBMalformed $
+                            sformat ("Pos.DB.Block.GState.BlockExtra.convertLastSlots: tip mismatch "
+                                    % int % " /= " % int % " " % shown % " " % shown
+                                    )
+                                (flattenEpochOrSlot eslots $ getEpochOrSlot th) x (isRight . unEpochOrSlot $ getEpochOrSlot th) xs
+
+                    liftIO $ do
+                        hFlush stdout
+                        hFlush stderr
+
+                    putTextLn "\n\n\nHere, hold my beer ...."
+                    liftIO $ exitImmediately (ExitFailure 42)
+
             ys <- OldestFirst <$> convert th xs []
             when (map lsiFlatSlotId ys /= fids) $
                 throwM . DBMalformed $ sformat

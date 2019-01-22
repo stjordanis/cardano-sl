@@ -9,6 +9,8 @@ module Pos.DB.Block.Slog.Context
        , slogGetLastSlots
        , slogPutLastSlots
        , slogRollbackLastSlots
+
+       , validateFlatSlotIds
        ) where
 
 import           Universum
@@ -29,7 +31,9 @@ import           Pos.DB.Block.GState.BlockExtra (getLastSlots, putLastSlots,
 import           Pos.DB.Class (MonadDB, MonadDBRead)
 
 import           Serokell.Util (listJson)
-import           Pos.Util.Wlog (CanLog, HasLoggerName)
+import           Pos.Util.Wlog (CanLog, HasLoggerName, logDebug)
+import           System.Exit (ExitCode (..))
+import           System.Posix.Process (exitImmediately)
 
 -- | Make new 'SlogGState' using data from DB.
 mkSlogGState :: (MonadIO m, MonadDBRead m) => m SlogGState
@@ -87,12 +91,12 @@ slogGetLastSlots = do
 -- | Update 'LastBlkSlots' in 'SlogContext'.
 slogPutLastSlots ::
        (MonadReader ctx m, MonadDB m, HasSlogGState ctx, MonadIO m)
-    => LastBlkSlots
+    => Text -> LastBlkSlots
     -> m ()
-slogPutLastSlots slots = do
-    -- If we set 'LastBlkSlots' we set it in both the DB and the 'IORef'.
+slogPutLastSlots fname slots = do
+    validateFlatSlotIds fname (toList $ map lsiFlatSlotId slots)
+    -- When we set 'LastBlkSlots' we set it in both the DB and the 'IORef'.
     view (slogGState . sgsLastBlkSlots) >>= flip writeIORef slots
-    validateFlatSlotIds "slogPutLastSlots" (toList $ map lsiFlatSlotId slots)
     putLastSlots slots
 
 -- | Roll back the specified count of 'LastBlkSlots'.
@@ -101,6 +105,7 @@ slogRollbackLastSlots
     => Genesis.Config -> Int -> m ()
 slogRollbackLastSlots genesisConfig count = do
     -- Roll back in the DB, then read the DB and set the 'IORef'.
+    logDebug "Pos.DB.Block.Slog.Context.slogRollbackLastSlots: About to call rollbackLastSlots"
     rollbackLastSlots genesisConfig count
     slots <- getLastSlots
     validateFlatSlotIds "slogRollbackLastSlots" (toList $ map lsiFlatSlotId slots)
@@ -109,5 +114,7 @@ slogRollbackLastSlots genesisConfig count = do
 
 validateFlatSlotIds :: MonadIO m => Text -> [FlatSlotId] -> m ()
 validateFlatSlotIds fname xs =
-    when (List.sort xs /= xs) $
-        error $ sformat (stext % " " % listJson) fname xs
+    when (List.sort xs /= xs) $ do
+        putTextLn $ sformat ("\n\n\n" % stext % " sort error " % listJson % "\n") fname xs
+        liftIO $ exitImmediately (ExitFailure 42)
+

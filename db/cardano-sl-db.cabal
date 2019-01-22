@@ -159,6 +159,7 @@ library
                      , time-units
                      , transformers
                      , universum
+                     , unix
                      , unliftio
                      , unordered-containers
 

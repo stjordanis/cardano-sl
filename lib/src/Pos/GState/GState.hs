@@ -20,8 +20,8 @@ import           Pos.DB.Update (initGStateUS)
 
 -- | Put missing initial data into GState DB.
 prepareGStateDB ::
-       forall ctx m.
-       ( MonadReader ctx m
+       forall m.
+       ( MonadIO m
        , MonadDB m
        )
     => Genesis.Config

@@ -71,6 +71,7 @@ import           Pos.DB.Update (UpdateBlock, UpdateContext, usApplyBlocks,
                      usNormalize, usRollbackBlocks)
 import           Pos.Util (Some (..), spanSafe)
 import           Pos.Util.Util (HasLens', lensOf)
+import           Pos.Util.Wlog (logDebug)
 
 -- | Set of basic constraints used by high-level block processing.
 type MonadBlockBase ctx m
@@ -248,6 +249,7 @@ rollbackBlocksUnsafe genesisConfig bsc scb toRollback = do
         , sscBatch
         , slogRoll
         ]
+    logDebug "Pos.DB.Block.Logic.Internal.rollbackBlocksUnsafe: About to call slogRollbackLastSlots"
     slogRollbackLastSlots genesisConfig $ length toRollback
     -- After blocks are rolled back it makes sense to recreate the
     -- delegation mempool.
