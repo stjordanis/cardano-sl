@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-deprecations #-}
+
 module Test.Pos.Util.Golden where
 
 import           Universum

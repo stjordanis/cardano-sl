@@ -35,8 +35,10 @@ module Pos.Chain.Genesis.Config
 import           Universum
 
 import           Control.Exception (throwIO)
-import           Data.Aeson (FromJSON, ToJSON, Value (..), object,
-                     parseJSON, toJSON, (.:), (.=))
+import           Data.Aeson (FromJSON, ToJSON, Value (..), pairs, toEncoding,
+                      parseJSON, object, toJSON, (.:), (.=))
+import           Data.Aeson.Encoding (pairStr)
+import           Data.Aeson.Encoding.Internal (pair)
 import           Data.Aeson.Types (typeMismatch)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
@@ -86,7 +88,7 @@ data StaticConfig
       -- !FilePath = Path to file where 'GenesisData' is stored. Must be
       -- in JSON, not necessary canonical.
       -- !(Hash Raw) = Hash of canonically encoded 'GenesisData'.
-    deriving (Eq, Show)
+    deriving (Eq, Show, Generic)
 
 instance ToJSON StaticConfig where
     toJSON (GCSrc gcsFile gcsHash) =
@@ -95,6 +97,12 @@ instance ToJSON StaticConfig where
                                     ]
                ]
     toJSON (GCSpec value) = object ["spec" .= (toJSON value)]
+    toEncoding (GCSrc gcsFile gcsHash) =
+        pairs $ "src" `pair`
+            (pairs $ mconcat [ "file" .= gcsFile
+                             , "hash" .= gcsHash
+                             ])
+    toEncoding (GCSpec value) = pairs $ pairStr "spENCODINGec" (toEncoding value)
 
 instance FromJSON StaticConfig where
     parseJSON (Object o)
@@ -146,7 +154,6 @@ instance FromJSON StaticConfig where
                           avvmBalanceFactor
                           useHeavyDlg
                           seed)
-        | otherwise = fail "Incorrect JSON encoding for StaticConfig"
 
     parseJSON invalid = typeMismatch "StaticConfig" invalid
 

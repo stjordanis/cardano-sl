@@ -1,5 +1,5 @@
-{-# OPTIONS_GHC -fno-warn-deprecations #-}
 {-# OPTIONS_GHC -fno-warn-orphans      #-}
+{-# OPTIONS_GHC -fno-warn-deprecations      #-}
 
 module Test.Pos.Util.Tripping where
 
@@ -10,9 +10,9 @@ import           Data.Aeson (FromJSON, ToJSON, eitherDecode, encode)
 import           Data.Text.Internal.Builder (fromText, toLazyText)
 import qualified Data.Yaml as Y
 import           Formatting.Buildable (Buildable (..))
-import           Hedgehog (Group, MonadTest, discoverPrefix, success, tripping)
-import           Hedgehog.Internal.Property (Diff (..), failWith)
-import           Hedgehog.Internal.Show (valueDiff)
+import           Hedgehog (Gen, Group, MonadTest, discoverPrefix, success, tripping)
+import           Hedgehog.Internal.Property (Diff (..), Property, TestLimit, annotate, failWith, forAllWith, property, withTests)
+import           Hedgehog.Internal.Show (showPretty, valueDiff)
 import           Hedgehog.Internal.TH (TExpQ)
 import           System.IO (hSetEncoding, stderr, stdout, utf8)
 import qualified Text.JSON.Canonical as Canonical
@@ -20,21 +20,30 @@ import           Text.Show.Pretty (Value (..), parseValue)
 
 import           Pos.Util.Json.Canonical (SchemaError (..))
 
+aesonYamlRoundTrip :: (Eq a, Show a, ToJSON a, FromJSON a) => TestLimit -> Gen a -> Property
+aesonYamlRoundTrip testLimit things = withTests testLimit . property $ do
+     annotate "Aeson"
+     forAllWith (\x -> sideTrip x encode eitherDecode) things >>= roundTripsAesonShow
+     annotate "YAML"
+     forAllWith (\x -> sideTrip x Y.encode Y.decodeEither) things >>= roundTripsYAMLShow
+
 discoverRoundTrip :: TExpQ Group
 discoverRoundTrip = discoverPrefix "roundTrip"
 
 roundTripsAesonShow
+    :: (Eq a, MonadTest m, ToJSON a, FromJSON a, Show a, HasCallStack) => a -> m ()
+roundTripsAesonShow a = tripping a encode eitherDecode
+
+roundTripsYAMLShow
     :: (Eq a, MonadTest m, ToJSON a, FromJSON a, Show a) => a -> m ()
-roundTripsAesonShow a = do
-    tripping a encode eitherDecode
-    tripping a Y.encode Y.decodeEither
+roundTripsYAMLShow a = tripping a Y.encode Y.decodeEither
 
 -- | Round trip any `a` with both `ToJSON` and `FromJSON` instances
 roundTripsAesonBuildable
     :: (Eq a, MonadTest m, ToJSON a, FromJSON a, Buildable a) => a -> m ()
 roundTripsAesonBuildable a = do
     trippingBuildable a encode eitherDecode
-    trippingBuildable a Y.encode Y.decodeEither
+    --trippingBuildable a Y.encode Y.decodeEither
 
 -- We want @SchemaError@s to show up different (register failure)
 instance Eq SchemaError where
@@ -64,6 +73,19 @@ runTests tests' = do
     result <- and <$> sequence tests'
     unless result
         exitFailure
+
+sideTrip :: (Show a, Show b, Show (f a)) => a -> (a -> b) -> (b -> f a) -> String
+sideTrip val enc dec =
+    let encoded = enc val
+        decoded = dec encoded
+    in  Prelude.unlines
+            [ "━━━ Original ━━━"
+            , showPretty val
+            , "━━━ Intermediate ━━━"
+            , showPretty encoded
+            , "━━━ Roundtrip ━━━"
+            , showPretty decoded
+            ]
 
 -- | Round trip using given encode and decode functions for types with a
 --   `Buildable` instance

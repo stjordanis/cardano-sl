@@ -2,11 +2,15 @@
 
 module Test.Pos.Chain.Genesis.Json
        ( tests
+       , roundTripStaticConfig_without_eachOf_no_wrapper
+       , roundTripStaticConfig_without_eachOf_wrapper
+       , roundTripStaticConfig_with_eachOf
+       , roundTripStaticConfig_with_AY
        ) where
 
 import           Universum
 
-import           Data.Aeson (eitherDecode)
+import           Data.Aeson (eitherDecode, encode)
 import qualified Data.ByteString.Lazy as LB
 import           Hedgehog (Property, assert, withTests)
 import qualified Hedgehog as H
@@ -28,9 +32,11 @@ import           Test.Pos.Core.ExampleHelpers (feedPM, feedPMWithRequiresMagic)
 import           Test.Pos.Util.Golden (discoverGolden, eachOf,
                      goldenFileCanonicalEquiv, goldenTestCanonicalJSONDec,
                      goldenTestJSONDec, goldenTestJSONPretty, goldenValueEquiv)
-import           Test.Pos.Util.Tripping (discoverRoundTrip, roundTripsAesonShow,
-                     roundTripsCanonicalJSONShow)
+import           Test.Pos.Util.Tripping (aesonYamlRoundTrip, discoverRoundTrip,
+                     roundTripsAesonShow, roundTripsCanonicalJSONShow
+                     )
 
+import GHC.Stack (withFrozenCallStack)
 --------------------------------------------------------------------------------
 -- StaticConfig
 --------------------------------------------------------------------------------
@@ -63,9 +69,23 @@ golden_StaticConfig_GCSrc =
         exampleStaticConfig_GCSrc
             "test/golden/json/StaticConfig_GCSrc"
 
-roundTripStaticConfig :: Property
-roundTripStaticConfig =
+roundTripStaticConfig_with_AY :: Property
+roundTripStaticConfig_with_AY =
+    aesonYamlRoundTrip 100 (feedPM genStaticConfig)
+
+roundTripStaticConfig_with_eachOf :: Property
+roundTripStaticConfig_with_eachOf =
     eachOf 100 (feedPM genStaticConfig) roundTripsAesonShow
+
+roundTripStaticConfig_without_eachOf_no_wrapper :: Property
+roundTripStaticConfig_without_eachOf_no_wrapper = H.withTests 100 . H.property $ do
+    val <- H.forAll $ feedPM genStaticConfig
+    H.tripping val encode eitherDecode
+
+roundTripStaticConfig_without_eachOf_wrapper :: Property
+roundTripStaticConfig_without_eachOf_wrapper = H.withTests 100 . H.property $ do
+    val <- H.forAll $ feedPM genStaticConfig
+    roundTripsAesonShow val
 
 {-# ANN module ("HLint: ignore Reduce duplication" :: Text) #-}
 
