@@ -1,12 +1,14 @@
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -fno-warn-deprecations #-}
+{-# OPTIONS_GHC -fno-warn-orphans      #-}
 
 module Test.Pos.Util.Tripping where
 
 import qualified Prelude
 import           Universum
 
-import           Data.Aeson (FromJSON, ToJSON, decode, encode)
+import           Data.Aeson (FromJSON, ToJSON, eitherDecode, encode)
 import           Data.Text.Internal.Builder (fromText, toLazyText)
+import qualified Data.Yaml as Y
 import           Formatting.Buildable (Buildable (..))
 import           Hedgehog (Group, MonadTest, discoverPrefix, success, tripping)
 import           Hedgehog.Internal.Property (Diff (..), failWith)
@@ -23,12 +25,16 @@ discoverRoundTrip = discoverPrefix "roundTrip"
 
 roundTripsAesonShow
     :: (Eq a, MonadTest m, ToJSON a, FromJSON a, Show a) => a -> m ()
-roundTripsAesonShow a = tripping a encode decode
+roundTripsAesonShow a = do
+    tripping a encode eitherDecode
+    tripping a Y.encode Y.decodeEither
 
 -- | Round trip any `a` with both `ToJSON` and `FromJSON` instances
 roundTripsAesonBuildable
     :: (Eq a, MonadTest m, ToJSON a, FromJSON a, Buildable a) => a -> m ()
-roundTripsAesonBuildable a = trippingBuildable a encode decode
+roundTripsAesonBuildable a = do
+    trippingBuildable a encode eitherDecode
+    trippingBuildable a Y.encode Y.decodeEither
 
 -- We want @SchemaError@s to show up different (register failure)
 instance Eq SchemaError where
@@ -92,6 +98,10 @@ trippingBuildable x enc dec =
 instance Buildable a => Buildable (Either Text a) where
     build (Left t)  = fromText t
     build (Right a) = build a
+
+instance Buildable a => Buildable (Either String a)  where
+    build (Left l) = build l
+    build (Right r) = build r
 
 instance Buildable () where
     build () = "()"
