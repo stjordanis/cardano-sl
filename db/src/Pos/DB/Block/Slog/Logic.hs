@@ -26,8 +26,9 @@ import           Universum
 
 import           Control.Lens (_Wrapped)
 import           Control.Monad.Except (MonadError (throwError))
+import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
-import           Formatting (build, sformat, shown, (%), sformat)
+import           Formatting -- (build, sformat, shown, (%), sformat)
 import           Serokell.Util (Color (Red), colorize)
 import           Serokell.Util.Verify (formatAllErrors, verResToMonadError)
 
@@ -64,7 +65,12 @@ import           Pos.Util (_neHead, _neLast)
 import           Pos.Util.AssertMode (inAssertMode)
 import           Pos.Util.Util (HasLens', lensOf)
 import           Pos.Util.Wlog -- (WithLogger, logInfo, logDebug)
+
 import           Serokell.Util (listJson)
+import           System.Exit (ExitCode (..))
+import           System.IO (hFlush, stderr, stdout)
+import           System.IO.Unsafe
+import           System.Posix.Process (exitImmediately)
 
 ----------------------------------------------------------------------------
 -- Helpers
@@ -182,16 +188,21 @@ slogVerifyBlocks genesisConfig curSlot blocks = runExceptT $ do
     -- This removed slot must be put into 'SlogUndo'.
     lastSlots <- lift GS.getLastSlots
     -- these slots will be added if we apply all blocks
-    let newSlots =
-            mapMaybe (toLastSlotInfo (configEpochSlots genesisConfig)) $ toList blocks
+    let newSlots :: [LastSlotInfo]
+        newSlots =
+            validateLastSlotInfos "slogVerifyBlocks newSlots:" .
+                mapMaybe (toLastSlotInfo (configEpochSlots genesisConfig)) $ toList blocks
     let combinedSlots :: OldestFirst [] LastSlotInfo
-        combinedSlots = lastSlots & _Wrapped %~ (<> newSlots)
+        combinedSlots =
+            OldestFirst . validateLastSlotInfos "slogVerifyBlocks combinedSlots:" $ getOldestFirst (lastSlots & _Wrapped %~ (<> newSlots))
     -- these slots will be removed if we apply all blocks, because we store
     -- only limited number of slots
     let removedSlots :: OldestFirst [] LastSlotInfo
         removedSlots =
+          OldestFirst . validateLastSlotInfos "slogVerifyBlocks removedSlots:" $ getOldestFirst (
             combinedSlots & _Wrapped %~
             (take $ length combinedSlots - configK genesisConfig)
+            )
     -- Note: here we exploit the fact that genesis block can be only 'head'.
     -- If we have genesis block, then size of 'newSlots' will be less than
     -- number of blocks we verify. It means that there will definitely
@@ -272,11 +283,11 @@ slogApplyBlocks nm k (ShouldCallBListener callBListener) blunds = do
     -- operation below, but if we don't have both, either the generator tests or
     -- syncing mainnet fails.
 
-    when False $
+    when False $ do
         putTextLn $ sformat ("\nPos.DB.Block.Slog.Logic.slogApplyBlocks " % listJson % "\n") (toList $ map lsiFlatSlotId lastSlots)
 
-    putTextLn $ sformat ("Pos.DB.Block.Slog.Logic.slogApplyBlocks: kEpochSlots " % shown % "\n") (kEpochSlots k)
-    putTextLn $ sformat ("Pos.DB.Block.Slog.Logic.slogApplyBlocks.newSlots: " % listJson % "\n") (map lsiFlatSlotId newSlots)
+        putTextLn $ sformat ("Pos.DB.Block.Slog.Logic.slogApplyBlocks: kEpochSlots " % shown % "\n") (kEpochSlots k)
+        putTextLn $ sformat ("Pos.DB.Block.Slog.Logic.slogApplyBlocks.newSlots: " % listJson % "\n") (map lsiFlatSlotId newSlots)
 
     slogPutLastSlots "Pos.DB.Block.Slog.Logic.slogApplyBlocks: " $ newLastSlots lastSlots
     putDifficulty <- GS.getMaxSeenDifficulty <&> \x ->
@@ -299,10 +310,10 @@ slogApplyBlocks nm k (ShouldCallBListener callBListener) blunds = do
         fmap (GS.SetInMainChain True . view headerHashG . fst) blunds
 
     newSlots :: [LastSlotInfo]
-    newSlots = mapMaybe (toLastSlotInfo (kEpochSlots k)) $ toList blocks
+    newSlots = validateLastSlotInfos "updateLastSlots" $ mapMaybe (toLastSlotInfo (kEpochSlots k)) $ toList blocks
 
     newLastSlots :: OldestFirst [] LastSlotInfo -> OldestFirst [] LastSlotInfo
-    newLastSlots lastSlots = lastSlots & _Wrapped %~ updateLastSlots
+    newLastSlots = OldestFirst . updateLastSlots . getOldestFirst
 
     knownSlotsBatch :: OldestFirst [] LastSlotInfo -> [GS.BlockExtraOp]
     knownSlotsBatch lastSlots
@@ -313,7 +324,7 @@ slogApplyBlocks nm k (ShouldCallBListener callBListener) blunds = do
     -- end and drop old slots from the beginning.
     updateLastSlots :: [LastSlotInfo] -> [LastSlotInfo]
     updateLastSlots lastSlots =
-        leaveAtMostN (fromIntegral k) (lastSlots ++ newSlots)
+        validateLastSlotInfos "updateLastSlots" $ leaveAtMostN (fromIntegral k) (lastSlots ++ newSlots)
 
     leaveAtMostN :: Int -> [a] -> [a]
     leaveAtMostN n lst = drop (length lst - n) lst
@@ -321,6 +332,31 @@ slogApplyBlocks nm k (ShouldCallBListener callBListener) blunds = do
     blockExtraBatch :: OldestFirst [] LastSlotInfo -> [GS.BlockExtraOp]
     blockExtraBatch lastSlots =
         mconcat [knownSlotsBatch lastSlots, forwardLinksBatch, inMainBatch]
+
+
+validateLastSlotInfos :: Text -> [LastSlotInfo] -> [LastSlotInfo]
+validateLastSlotInfos fname xs =
+    let ys = map lsiFlatSlotId xs in
+    if List.sort ys /= ys
+        then unsafeEvilAbort (sformat ("\n\n\n" % stext % " sort error " % listJson % "\n") fname ys) xs
+        else xs
+
+unsafeEvilAbort :: Text -> a -> a
+unsafeEvilAbort msg a =
+    unsafePerformIO $ do
+        _ <- liftIO $ evilAbort msg
+        pure a
+
+evilAbort :: MonadIO m => Text -> m a
+evilAbort msg =
+    liftIO $ do
+        putTextLn ""
+        putTextLn msg
+        putTextLn ""
+        hFlush stdout
+        hFlush stderr
+        exitImmediately (ExitFailure 42)
+        error msg
 
 newtype BypassSecurityCheck = BypassSecurityCheck Bool
 
@@ -397,7 +433,8 @@ slogRollbackBlocks genesisConfig (BypassSecurityCheck bypassSecurity) (ShouldCal
             $ toList (toOldestFirst blunds)
 
     newLastSlots :: OldestFirst [] LastSlotInfo -> OldestFirst [] LastSlotInfo
-    newLastSlots lastSlots = lastSlots & _Wrapped %~ updateLastSlots
+    newLastSlots = OldestFirst . updateLastSlots . getOldestFirst
+
     -- 'lastSlots' is what we currently store. It contains at most
     -- 'blkSecurityParam' slots. 'lastSlotsToAppend' are slots for
     -- main blocks which are 'blkSecurityParam' far from the blocks we

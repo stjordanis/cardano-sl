@@ -122,37 +122,30 @@ convertLastSlots eslots fids = do
         xs@(x:_) -> do
             th <- getTipHeader
             let thfsid = flattenEpochOrSlot eslots $ getEpochOrSlot th
-            when (thfsid /= x) $ do
-                    putTextLn $ -- throwM . DBMalformed $
+            when (thfsid /= x) $
+                    evilAbort $ -- throwM . DBMalformed $
                             sformat ("Pos.DB.Block.GState.BlockExtra.convertLastSlots: tip mismatch "
                                     % int % " /= " % int % " " % shown % " " % shown
                                     )
                                 (flattenEpochOrSlot eslots $ getEpochOrSlot th) x (isRight . unEpochOrSlot $ getEpochOrSlot th) xs
 
-                    liftIO $ do
-                        hFlush stdout
-                        hFlush stderr
-
-                    putTextLn "\n\n\nHere, hold my beer ...."
-                    liftIO $ exitImmediately (ExitFailure 42)
-
             ys <- OldestFirst <$> convert th xs []
             when (map lsiFlatSlotId ys /= fids) $
-                throwM . DBMalformed $ sformat
+                evilAbort $ sformat
                     ("Pos.DB.Block.GState.BlockExtra.convertLastSlots: in/out mismatch\n    " % text % "\n    " % text % "\n")
                             (show fids) (show $ map lsiFlatSlotId ys)
             pure ys
   where
     --
-    convert :: MonadDB m => BlockHeader -> [FlatSlotId] -> [LastSlotInfo] -> m [LastSlotInfo]
+    convert :: (MonadDB m, MonadIO m) => BlockHeader -> [FlatSlotId] -> [LastSlotInfo] -> m [LastSlotInfo]
     convert _ [] !acc = pure acc
     convert bh (fsid:xs) !acc = do
         when (flattenEpochOrSlot eslots (getEpochOrSlot bh) /= fsid) $
-            throwM . DBMalformed $ sformat
+            evilAbort $ sformat
                 ("Pos.DB.Block.GState.BlockExtra.convertLastSlots.covert: FlatSlotId mismatch " % build % " " % build % "\n")
                     (flattenEpochOrSlot eslots $ getEpochOrSlot bh) fsid
         nbh <- getHeader (view prevBlockL bh)
-                >>= maybeThrow (DBMalformed "convertLastSlots: getHeader for previous block failed")
+                >>= maybe (evilAbort ("convertLastSlots: getHeader for previous block failed")) pure
         case leaderKey bh of
             Nothing -> convert nbh xs acc
             Just lk -> convert nbh xs $ LastSlotInfo fsid lk : acc
@@ -161,6 +154,17 @@ convertLastSlots eslots fids = do
     leaderKey = \case
         BlockHeaderGenesis _ -> Nothing
         BlockHeaderMain bhm -> Just $ view mainHeaderLeaderKey bhm
+
+evilAbort :: MonadIO m => Text -> m a
+evilAbort msg =
+    liftIO $ do
+        putTextLn ""
+        putTextLn msg
+        putTextLn ""
+        hFlush stdout
+        hFlush stderr
+        exitImmediately (ExitFailure 42)
+        error msg
 
 -- | Retrieves first genesis block hash.
 getFirstGenesisBlockHash :: MonadDBRead m => GenesisHash -> m HeaderHash
