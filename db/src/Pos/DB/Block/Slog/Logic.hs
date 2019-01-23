@@ -63,7 +63,7 @@ import           Pos.DB.Update (getAdoptedBVFull, getConsensusEra)
 import           Pos.Util (_neHead, _neLast)
 import           Pos.Util.AssertMode (inAssertMode)
 import           Pos.Util.Util (HasLens', lensOf)
-import           Pos.Util.Wlog (WithLogger, logInfo)
+import           Pos.Util.Wlog -- (WithLogger, logInfo, logDebug)
 import           Serokell.Util (listJson)
 
 ----------------------------------------------------------------------------
@@ -274,7 +274,11 @@ slogApplyBlocks nm k (ShouldCallBListener callBListener) blunds = do
 
     when False $
         putTextLn $ sformat ("\nPos.DB.Block.Slog.Logic.slogApplyBlocks " % listJson % "\n") (toList $ map lsiFlatSlotId lastSlots)
-    slogPutLastSlots "Pos.DB.Block.Slog.Logic.slogApplyBlocks" $ newLastSlots lastSlots
+
+    putTextLn $ sformat ("Pos.DB.Block.Slog.Logic.slogApplyBlocks: kEpochSlots " % shown % "\n") (kEpochSlots k)
+    putTextLn $ sformat ("Pos.DB.Block.Slog.Logic.slogApplyBlocks.newSlots: " % listJson % "\n") (map lsiFlatSlotId newSlots)
+
+    slogPutLastSlots "Pos.DB.Block.Slog.Logic.slogApplyBlocks: " $ newLastSlots lastSlots
     putDifficulty <- GS.getMaxSeenDifficulty <&> \x ->
         SomeBatchOp [GS.PutMaxSeenDifficulty newestDifficulty
                         | newestDifficulty > x]

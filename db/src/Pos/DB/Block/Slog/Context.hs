@@ -33,6 +33,7 @@ import           Pos.DB.Class (MonadDB, MonadDBRead)
 import           Serokell.Util (listJson)
 import           Pos.Util.Wlog (CanLog, HasLoggerName, logDebug)
 import           System.Exit (ExitCode (..))
+import           System.IO (hFlush, stderr, stdout)
 import           System.Posix.Process (exitImmediately)
 
 -- | Make new 'SlogGState' using data from DB.
@@ -116,5 +117,8 @@ validateFlatSlotIds :: MonadIO m => Text -> [FlatSlotId] -> m ()
 validateFlatSlotIds fname xs =
     when (List.sort xs /= xs) $ do
         putTextLn $ sformat ("\n\n\n" % stext % " sort error " % listJson % "\n") fname xs
-        liftIO $ exitImmediately (ExitFailure 42)
+        liftIO $ do
+            hFlush stdout
+            hFlush stderr
+            exitImmediately (ExitFailure 42)
 
