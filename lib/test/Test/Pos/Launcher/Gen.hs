@@ -10,7 +10,8 @@ import           Pos.Chain.Block (BlockConfiguration (BlockConfiguration))
 import           Pos.Chain.Delegation (DlgConfiguration (DlgConfiguration))
 import           Pos.Chain.Genesis (StaticConfig (GCSrc))
 import           Pos.Chain.Ssc (SscConfiguration (SscConfiguration))
-import           Pos.Chain.Txp (TxpConfiguration (TxpConfiguration))
+import           Pos.Chain.Txp (TxpConfiguration (TxpConfiguration), TxValidationRules(TxValidationRules))
+import Pos.Core.Slotting (EpochOrSlot(EpochOrSlot), EpochIndex(EpochIndex), SlotId(SlotId), LocalSlotIndex(UnsafeLocalSlotIndex))
 import           Pos.Chain.Update (UpdateConfiguration (UpdateConfiguration))
 import           Pos.Configuration (NodeConfiguration (NodeConfiguration))
 import           Pos.Crypto.Configuration
@@ -25,11 +26,26 @@ import           Test.Pos.Chain.Update.Gen (genApplicationName, genBlockVersion,
 -- TODO, move a lot of the chain specific generators into cardano-sl-chain
 
 genConfiguration :: Gen Configuration
-genConfiguration = Configuration <$> genGenesis <*> genNtp <*> genUpdate <*> genSsc <*> genDlg <*> genTxp <*> genBlock <*> genNode <*> genWallet <*> genReqNetMagic
+genConfiguration = Configuration <$> genGenesis <*> genNtp <*> genUpdate <*> genSsc <*> genDlg <*> genTxp <*> genBlock <*> genNode <*> genWallet <*> genReqNetMagic <*> genTxValidationRules
 
 genGenesis :: Gen StaticConfig
 -- TODO, GCSpec not covered
 genGenesis = GCSrc <$> genstring <*> (pure $ unsafeMkAbstractHash mempty)
+
+genTxValidationRules :: Gen TxValidationRules
+genTxValidationRules = TxValidationRules <$> genEpochOrSlot <*> genEpochOrSlot <*> Gen.integral (Range.constant 1 1000) <*> Gen.integral (Range.constant 1 1000)
+
+-- TODO, move these into cardano-sl-core
+genEpochOrSlot :: Gen EpochOrSlot
+genEpochOrSlot = Gen.choice [ genEpoch, genSlot ]
+  where
+    genEpoch = do
+      epoch <- Gen.integral (Range.constant 1 1000)
+      pure $ EpochOrSlot $ Left $ EpochIndex epoch
+    genSlot = do
+      epoch <- Gen.integral (Range.constant 1 1000)
+      slot <- Gen.integral (Range.constant 1 1000)
+      pure $ EpochOrSlot $ Right $ SlotId epoch (UnsafeLocalSlotIndex slot)
 
 genNtp :: Gen NtpConfiguration
 genNtp = NtpConfiguration <$> Gen.list (Range.constant 1 4) genstring <*> Gen.integral (Range.constant 1 1000) <*> Gen.integral (Range.constant 1 1000)
