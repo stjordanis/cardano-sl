@@ -26,9 +26,9 @@ module Pos.DB.Block.GState.BlockExtra
 import           Universum hiding (init)
 
 import           Data.Conduit (ConduitT, yield)
-import qualified Data.List as List
+
 import qualified Database.RocksDB as Rocks
-import           Formatting (Format, bprint, build, later, (%), sformat, text, int, shown)
+import           Formatting (Format, bprint, build, later, (%))
 import           Serokell.Util.Text (listJson)
 import           System.IO (hFlush, stderr, stdout)
 import           System.Exit (ExitCode (..))
@@ -37,11 +37,11 @@ import           System.Posix.Process (exitImmediately)
 import           Pos.Binary.Class (serialize')
 import           Pos.Chain.Block (Block, BlockHeader (..), HasHeaderHash, HeaderHash,
                      LastBlkSlots, LastSlotInfo (..), prevBlockL, headerHash, mainHeaderLeaderKey, noLastBlkSlots)
-import           Pos.Chain.Genesis (GenesisHash (..), configEpochSlots)
+import           Pos.Chain.Genesis (GenesisHash (..), configEpochSlots, configBlkSecurityParam)
 import qualified Pos.Chain.Genesis as Genesis
-import           Pos.Core (EpochOrSlot (..), FlatSlotId, SlotCount, flattenEpochOrSlot,
+import           Pos.Core (FlatSlotId, SlotCount, flattenEpochOrSlot,
                      getEpochOrSlot, slotIdF, unflattenSlotId)
-import           Pos.Core.Chrono (OldestFirst (..), NewestFirst (..), toNewestFirst)
+import           Pos.Core.Chrono (OldestFirst (..))
 import           Pos.Crypto (PublicKey, shortHashF)
 import           Pos.DB (DBError (..), MonadDB, MonadDBRead (..),
                      RocksBatchOp (..), getHeader, getTipHeader, gsDelete)
@@ -87,14 +87,7 @@ rollbackLastSlots :: forall m . (CanLog m, MonadIO m, MonadDB m) => Genesis.Conf
 rollbackLastSlots genesisConfig _count = do
     -- Simple is better. Find the 'FlatSlotId' of the tip header and then generate
     -- the required 'LastBlkSlots' data from that.
-    thfsid <- flattenEpochOrSlot (configEpochSlots genesisConfig) . getEpochOrSlot <$> getTipHeader
-    let newSlots = OldestFirst
-                        . List.reverse
-                        . List.takeWhile (>= 0)
-                        . List.take (fromIntegral $ configEpochSlots genesisConfig)
-                        $ List.reverse [ 0 .. thfsid ]
-    convertLastSlots (configEpochSlots genesisConfig) newSlots
-        >>= gsPutBi lastSlotsKey2
+    gsPutBi lastSlotsKey2 =<< getLastSlotInfo genesisConfig
 
 -- | This function acts as a one time conversion from version 1 to version 2
 -- of the `LastBlkSlots` data type.
@@ -102,9 +95,8 @@ upgradeLastSlotsVersion :: forall m . (MonadDB m, MonadIO m) => Genesis.Config -
 upgradeLastSlotsVersion genesisConfig =
     gsGetBi oldLastSlotsKey >>= \case
         Nothing -> pure () -- Assume it has already been converted.
-        Just (slots :: OldestFirst [] FlatSlotId) -> do
-            convertLastSlots (configEpochSlots genesisConfig) slots
-                >>= gsPutBi lastSlotsKey2
+        Just (_ :: OldestFirst [] FlatSlotId) -> do
+            gsPutBi lastSlotsKey2 =<< getLastSlotInfo genesisConfig
             gsDelete oldLastSlotsKey -- Delete the old key
   where
     -- This is the DB key for version 1 of the `LastBlksSlots` data type that only
@@ -112,48 +104,34 @@ upgradeLastSlotsVersion genesisConfig =
     oldLastSlotsKey :: ByteString
     oldLastSlotsKey = "e/ls/"
 
--- Convert a list of 'FlatSlotId' to 'LastSlotInfo' but ensure that the output
--- list has at least 'eslots' entries if the chain is longer than 'eslots'
--- in length.
-convertLastSlots :: (MonadDB m, MonadIO m) => SlotCount -> OldestFirst [] FlatSlotId -> m (OldestFirst [] LastSlotInfo)
-convertLastSlots eslots fids = do
-    case getNewestFirst $ toNewestFirst fids of
-        [] -> pure $ OldestFirst []
-        xs@(x:_) -> do
-            th <- getTipHeader
-            let thfsid = flattenEpochOrSlot eslots $ getEpochOrSlot th
-            when (thfsid /= x) $
-                    evilAbort $ -- throwM . DBMalformed $
-                            sformat ("Pos.DB.Block.GState.BlockExtra.convertLastSlots: tip mismatch "
-                                    % int % " /= " % int % " " % shown % " " % shown
-                                    )
-                                (flattenEpochOrSlot eslots $ getEpochOrSlot th) x (isRight . unEpochOrSlot $ getEpochOrSlot th) xs
 
-            ys <- OldestFirst <$> convert th xs []
-            when (map lsiFlatSlotId ys /= fids) $
-                evilAbort $ sformat
-                    ("Pos.DB.Block.GState.BlockExtra.convertLastSlots: in/out mismatch\n    " % text % "\n    " % text % "\n")
-                            (show fids) (show $ map lsiFlatSlotId ys)
-            pure ys
+-- Get the 'LastSlotInfo' data for the last 'k' (security paramenter) starting
+-- at the current blockchain tip.
+getLastSlotInfo :: (MonadDB m, MonadIO m) => Genesis.Config -> m (OldestFirst [] LastSlotInfo)
+getLastSlotInfo genesisConfig = do
+    th <- getTipHeader
+    let thfsid = flattenEpochOrSlot (configEpochSlots genesisConfig) $ getEpochOrSlot th
+        lastfsid = max 0 (thfsid - fromIntegral (configBlkSecurityParam genesisConfig))
+
+    OldestFirst <$> convert th lastfsid []
   where
-    --
-    convert :: (MonadDB m, MonadIO m) => BlockHeader -> [FlatSlotId] -> [LastSlotInfo] -> m [LastSlotInfo]
-    convert _ [] !acc = pure acc
-    convert bh (fsid:xs) !acc = do
-        when (flattenEpochOrSlot eslots (getEpochOrSlot bh) /= fsid) $
-            evilAbort $ sformat
-                ("Pos.DB.Block.GState.BlockExtra.convertLastSlots.covert: FlatSlotId mismatch " % build % " " % build % "\n")
-                    (flattenEpochOrSlot eslots $ getEpochOrSlot bh) fsid
+    convert :: (MonadDB m, MonadIO m) => BlockHeader -> FlatSlotId -> [LastSlotInfo] -> m [LastSlotInfo]
+    convert bh lastFsid !acc = do
         nbh <- getHeader (view prevBlockL bh)
-                >>= maybe (evilAbort ("convertLastSlots: getHeader for previous block failed")) pure
-        case leaderKey bh of
-            Nothing -> convert nbh xs acc
-            Just lk -> convert nbh xs $ LastSlotInfo fsid lk : acc
+                >>= maybe (evilAbort ("getLastSlotInfo: getHeader for previous block failed")) pure
+        let nbhFsid = flattenEpochOrSlot (configEpochSlots genesisConfig) $ getEpochOrSlot nbh
+            ys = case leaderKey bh of
+                    Nothing -> acc
+                    Just lk -> LastSlotInfo nbhFsid lk : acc
+        if nbhFsid <= lastFsid
+            then pure acc
+            else convert nbh lastFsid ys
 
     leaderKey :: BlockHeader -> Maybe PublicKey
     leaderKey = \case
         BlockHeaderGenesis _ -> Nothing
         BlockHeaderMain bhm -> Just $ view mainHeaderLeaderKey bhm
+
 
 evilAbort :: MonadIO m => Text -> m a
 evilAbort msg =
