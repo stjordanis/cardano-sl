@@ -349,9 +349,9 @@ The following command can be used to see the percentage completion of the sync o
 
 ## Where can I find the API documentation?
 
-Run the latest wallet and go to <https://127.0.0.1:8090/docs/v1/index>.
+Run the latest wallet and go to <https://cardanodocs.com/technical/wallet/api/v1/>.
 
-For the v0 API documentation (deprecated), go to <https://127.0.0.1:8090/docs/v0/index>.
+For the v0 API documentation (deprecated), go to <https://cardanodocs.com/technical/wallet/api/v1/>.
 
 The domain and port can be customized with the `walletListen` attribute in `./custom-wallet-configuration.nix`.
 
