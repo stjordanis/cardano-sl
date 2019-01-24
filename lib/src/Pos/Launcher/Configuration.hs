@@ -31,6 +31,7 @@ module Pos.Launcher.Configuration
        , ccNode_L
        , ccWallet_L
        , ccReqNetMagic_L
+       , ccTxValRules_L
 
        , cfoFilePath_L
        , cfoKey_L
@@ -148,7 +149,8 @@ instance FromJSON Configuration where
         pure $ Configuration {..}
 
 instance ToJSON Configuration where
-    toJSON (Configuration genesis ntp update ssc dlg txp block node wallet reqnetmagic) = object [
+    toJSON (Configuration genesis ntp update ssc dlg txp block node
+                          wallet reqNetMagic txValRules) = object [
         "genesis" .= genesis
       , "ntp" .= ntp
       , "update" .= update
@@ -158,7 +160,8 @@ instance ToJSON Configuration where
       , "block" .= block
       , "node" .= node
       , "wallet" .= wallet
-      , "requiresNetworkMagic" .= reqnetmagic
+      , "requiresNetworkMagic" .= reqNetMagic
+      , "txValidationRules" .= txValRules
       ]
 
 data WalletConfiguration = WalletConfiguration
