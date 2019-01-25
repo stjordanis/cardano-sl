@@ -16657,6 +16657,7 @@ time
 time-units
 universum
 unordered-containers
+yaml
 ];
 testToolDepends = [
 cpphs
@@ -16699,6 +16700,7 @@ license = stdenv.lib.licenses.mit;
 , time-units
 , universum
 , unordered-containers
+, yaml
 }:
 mkDerivation {
 
@@ -16738,6 +16740,7 @@ text
 time-units
 universum
 unordered-containers
+yaml
 ];
 libraryToolDepends = [
 cpphs
