@@ -16,7 +16,7 @@ import           Test.Pos.Crypto.Gen (genRedeemPublicKey)
 import           Test.Pos.Util.Gen (genMillisecond)
 import           Test.Pos.Util.Golden (discoverGolden, eachOf, goldenTestJSON)
 import           Test.Pos.Util.Tripping (aesonYamlRoundtripShow, discoverRoundTrip,
-                     roundTripsAesonBuildable)
+                     roundTripsAesonYamlBuildable)
 
 --------------------------------------------------------------------------------
 -- Address
@@ -58,7 +58,7 @@ roundTripAddressShow =
 
 roundTripAddressBuildable :: Property
 roundTripAddressBuildable =
-    eachOf 100 genAddress roundTripsAesonBuildable
+    eachOf 100 genAddress roundTripsAesonYamlBuildable
 
 --------------------------------------------------------------------------------
 -- RedeemPublicKey
@@ -72,21 +72,21 @@ roundTripRedeemPublicKey = aesonYamlRoundtripShow 1000 genRedeemPublicKey
 --------------------------------------------------------------------------------
 
 roundTripCoin :: Property
-roundTripCoin = eachOf 1000 genCoin roundTripsAesonBuildable
+roundTripCoin = eachOf 1000 genCoin roundTripsAesonYamlBuildable
 
 --------------------------------------------------------------------------------
 -- SharedSeed
 --------------------------------------------------------------------------------
 
 roundTripSharedSeed :: Property
-roundTripSharedSeed = eachOf 1000 genSharedSeed roundTripsAesonBuildable
+roundTripSharedSeed = eachOf 1000 genSharedSeed roundTripsAesonYamlBuildable
 
 --------------------------------------------------------------------------------
 -- Millisecond
 --------------------------------------------------------------------------------
 
 roundTripMillisecond :: Property
-roundTripMillisecond = eachOf 1000 genMillisecond roundTripsAesonBuildable
+roundTripMillisecond = eachOf 1000 genMillisecond roundTripsAesonYamlBuildable
 
 --------------------------------------------------------------------------------
 -- Byte
@@ -100,7 +100,7 @@ roundTripByte = aesonYamlRoundtripShow 1000 genByte
 --------------------------------------------------------------------------------
 
 roundTripCoinPortion :: Property
-roundTripCoinPortion = eachOf 1000 genCoinPortion roundTripsAesonBuildable
+roundTripCoinPortion = eachOf 1000 genCoinPortion roundTripsAesonYamlBuildable
 
 --------------------------------------------------------------------------------
 -- FlatSlotId
@@ -114,14 +114,14 @@ roundTripFlatSlotId = aesonYamlRoundtripShow 1000 genFlatSlotId
 --------------------------------------------------------------------------------
 
 roundTripTxFeePolicy :: Property
-roundTripTxFeePolicy = eachOf 1000 genTxFeePolicy roundTripsAesonBuildable
+roundTripTxFeePolicy = eachOf 1000 genTxFeePolicy roundTripsAesonYamlBuildable
 
 --------------------------------------------------------------------------------
 -- EpochIndex
 --------------------------------------------------------------------------------
 
 roundTripEpochIndex :: Property
-roundTripEpochIndex = eachOf 1000 genEpochIndex roundTripsAesonBuildable
+roundTripEpochIndex = eachOf 1000 genEpochIndex roundTripsAesonYamlBuildable
 
 --------------------------------------------------------------------------------
 -- InvReqDataFlowLog

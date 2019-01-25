@@ -43,11 +43,11 @@ roundTripsYAMLShow
 roundTripsYAMLShow a = tripping a Y.encode Y.decodeEither
 
 -- | Round trip any `a` with both `ToJSON` and `FromJSON` instances
-roundTripsAesonBuildable
+roundTripsAesonYamlBuildable
     :: (Eq a, MonadTest m, ToJSON a, FromJSON a, Buildable a) => a -> m ()
-roundTripsAesonBuildable a = do
-    trippingBuildable a encode eitherDecode
-    --trippingBuildable a Y.encode Y.decodeEither
+roundTripsAesonYamlBuildable a = do
+    trippingBuildable a encode eitherDecode "Aeson"
+    trippingBuildable a Y.encode Y.decodeEither "Yaml"
 
 -- We want @SchemaError@s to show up different (register failure)
 instance Eq SchemaError where
@@ -93,8 +93,8 @@ yamlAesonCustomRender val enc dec =
 
 -- | Round trip using given encode and decode functions for types with a
 --   `Buildable` instance
-trippingBuildable :: (Buildable (f a), Eq (f a), Show b, Applicative f, MonadTest m) => a -> (a -> b) -> (b -> f a) -> m ()
-trippingBuildable x enc dec =
+trippingBuildable :: (Buildable (f a), Eq (f a), Show b, Applicative f, MonadTest m) => a -> (a -> b) -> (b -> f a) -> String -> m ()
+trippingBuildable x enc dec format =
   let mx = pure x
       i = enc x
       my = dec i
@@ -104,7 +104,8 @@ trippingBuildable x enc dec =
             Nothing ->
                 withFrozenCallStack $
                     failWith Nothing $ Prelude.unlines
-                        [ "━━━ Original ━━━"
+                        [ mconcat ["━━━ ", format," ━━━"]
+                        , "━━━ Original ━━━"
                         , buildPretty mx
                         , "━━━ Intermediate ━━━"
                         , show i
@@ -117,7 +118,8 @@ trippingBuildable x enc dec =
                     failWith
                         (Just $ Diff "━━━ " "- Original" "/" "+ Roundtrip" " ━━━" diff) $
                             Prelude.unlines
-                            [ "━━━ Intermediate ━━━"
+                            [ mconcat ["━━━ ", format," ━━━"]
+                            , "━━━ Intermediate ━━━"
                             , show i
                             ]
 
