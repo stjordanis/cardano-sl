@@ -8,7 +8,9 @@ import qualified Hedgehog as H
 import           Test.Pos.Crypto.Example (exampleProtocolMagic0,
                      exampleProtocolMagic1, exampleProtocolMagic2,
                      exampleProtocolMagic3, exampleProtocolMagic4)
+import           Test.Pos.Crypto.Gen (genHDAddressPayload, genProtocolMagic)
 import           Test.Pos.Util.Golden (discoverGolden, goldenTestJSONDec)
+import           Test.Pos.Util.Tripping (aesonYamlRoundtripShow, discoverRoundTrip)
 
 --------------------------------------------------------------------------------
 -- ProtocolMagic
@@ -51,5 +53,19 @@ golden_ProtocolMagic4AesonDec_NMMustBeNothing =
         exampleProtocolMagic4
             "test/golden/json/ProtocolMagic_Legacy_NMMustBeNothing"
 
+roundTripProtocolMagicAeson :: Property
+roundTripProtocolMagicAeson = aesonYamlRoundtripShow 1000 genProtocolMagic
+
+--------------------------------------------------------------------------------
+-- HDAddressPayload
+--------------------------------------------------------------------------------
+
+roundTripHDAddressPayloadAeson :: Property
+roundTripHDAddressPayloadAeson =
+    aesonYamlRoundtripShow 1000 genHDAddressPayload
+
+
 tests :: IO Bool
-tests = H.checkSequential $$discoverGolden
+tests = and <$> sequence [ H.checkSequential $$discoverGolden
+                         , H.checkSequential $$discoverRoundTrip
+                         ]

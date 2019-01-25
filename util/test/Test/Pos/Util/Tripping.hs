@@ -20,12 +20,16 @@ import           Text.Show.Pretty (Value (..), parseValue)
 
 import           Pos.Util.Json.Canonical (SchemaError (..))
 
-aesonYamlRoundTrip :: (Eq a, Show a, ToJSON a, FromJSON a) => TestLimit -> Gen a -> Property
-aesonYamlRoundTrip testLimit things = withTests testLimit . property $ do
+
+aesonYamlRoundtripShow
+    :: (Eq a, Show a, ToJSON a, FromJSON a) => TestLimit -> Gen a -> Property
+aesonYamlRoundtripShow testLimit things = withTests testLimit . property $ do
      annotate "Aeson"
-     forAllWith (\x -> sideTrip x encode eitherDecode) things >>= roundTripsAesonShow
+     forAllWith
+         (\x -> yamlAesonCustomRender x encode eitherDecode) things >>= roundTripsAesonShow
      annotate "YAML"
-     forAllWith (\x -> sideTrip x Y.encode Y.decodeEither) things >>= roundTripsYAMLShow
+     forAllWith
+         (\x -> yamlAesonCustomRender x Y.encode Y.decodeEither) things >>= roundTripsYAMLShow
 
 discoverRoundTrip :: TExpQ Group
 discoverRoundTrip = discoverPrefix "roundTrip"
@@ -74,8 +78,8 @@ runTests tests' = do
     unless result
         exitFailure
 
-sideTrip :: (Show a, Show b, Show (f a)) => a -> (a -> b) -> (b -> f a) -> String
-sideTrip val enc dec =
+yamlAesonCustomRender :: (Show a, Show b, Show (f a)) => a -> (a -> b) -> (b -> f a) -> String
+yamlAesonCustomRender val enc dec =
     let encoded = enc val
         decoded = dec encoded
     in  Prelude.unlines

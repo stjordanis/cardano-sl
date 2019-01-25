@@ -19,9 +19,9 @@ import           Pos.Crypto.Hashing (abstractHash)
 import           Pos.Crypto.Signing (PublicKey (..))
 
 import           Test.Pos.Chain.Ssc.Gen (genAttackTarget)
-import           Test.Pos.Util.Golden (discoverGolden, eachOf,
+import           Test.Pos.Util.Golden (discoverGolden,
                      goldenTestJSONPretty, goldenValueEquiv)
-import           Test.Pos.Util.Tripping (discoverRoundTrip, roundTripsAesonShow)
+import           Test.Pos.Util.Tripping (aesonYamlRoundtripShow, discoverRoundTrip)
 
 -------------------------------------------------------------------------------
 -- AttackTarget
@@ -83,7 +83,7 @@ golden_prettyEquivalence_AttackTarget_PubKeyAddressTarget =
 
 roundTripAttackTarget :: Property
 roundTripAttackTarget =
-    eachOf 1000 genAttackTarget roundTripsAesonShow
+    aesonYamlRoundtripShow 1000 genAttackTarget
 
 -------------------------------------------------------------------------------
 -- Main test export

@@ -32,7 +32,7 @@ import           Test.Pos.Core.ExampleHelpers (feedPM, feedPMWithRequiresMagic)
 import           Test.Pos.Util.Golden (discoverGolden, eachOf,
                      goldenFileCanonicalEquiv, goldenTestCanonicalJSONDec,
                      goldenTestJSONDec, goldenTestJSONPretty, goldenValueEquiv)
-import           Test.Pos.Util.Tripping (aesonYamlRoundTrip, discoverRoundTrip,
+import           Test.Pos.Util.Tripping (aesonYamlRoundtripShow, discoverRoundTrip,
                      roundTripsAesonShow, roundTripsCanonicalJSONShow
                      )
 
@@ -71,11 +71,11 @@ golden_StaticConfig_GCSrc =
 
 roundTripStaticConfig_with_AY :: Property
 roundTripStaticConfig_with_AY =
-    aesonYamlRoundTrip 100 (feedPM genStaticConfig)
+    aesonYamlRoundtripShow 100 (feedPM genStaticConfig)
 
 roundTripStaticConfig_with_eachOf :: Property
 roundTripStaticConfig_with_eachOf =
-    eachOf 100 (feedPM genStaticConfig) roundTripsAesonShow
+    aesonYamlRoundtripShow 100 (feedPM genStaticConfig)
 
 roundTripStaticConfig_without_eachOf_no_wrapper :: Property
 roundTripStaticConfig_without_eachOf_no_wrapper = H.withTests 100 . H.property $ do
@@ -203,7 +203,7 @@ golden_prettyEquivalence_canonical_GenesisData_2 =
 
 roundTripGenesisAvvmBalances :: Property
 roundTripGenesisAvvmBalances =
-     eachOf 100 genGenesisAvvmBalances roundTripsAesonShow
+     aesonYamlRoundtripShow 100 genGenesisAvvmBalances
 
 --------------------------------------------------------------------------------
 -- GenesisDelegation
@@ -211,7 +211,7 @@ roundTripGenesisAvvmBalances =
 
 roundTripGenesisDelegation :: Property
 roundTripGenesisDelegation =
-    eachOf 100 (feedPM genGenesisDelegation) roundTripsAesonShow
+    aesonYamlRoundtripShow 100 (feedPM genGenesisDelegation)
 
 --------------------------------------------------------------------------------
 -- GenesisProtocolConstants
@@ -238,7 +238,7 @@ golden_GenesisProtocolConstants2Dec =
 
 roundTripGenesisProtocolConstants :: Property
 roundTripGenesisProtocolConstants =
-    eachOf 1000 (feedPM genGenesisProtocolConstants) roundTripsAesonShow
+    aesonYamlRoundtripShow 1000 (feedPM genGenesisProtocolConstants)
 
 golden_prettyEquivalence_GenesisProtocolConstants0 :: Property
 golden_prettyEquivalence_GenesisProtocolConstants0 = withFrozenCallStack $ do
@@ -290,7 +290,7 @@ golden_prettyEquivalence_GenesisProtocolConstants2 = withFrozenCallStack $ do
 
 roundTripGenesisInitializer :: Property
 roundTripGenesisInitializer =
-    eachOf 1000 genGenesisInitializer roundTripsAesonShow
+    aesonYamlRoundtripShow 1000 genGenesisInitializer
 
 tests :: IO Bool
 tests = (&&) <$> H.checkSequential $$discoverGolden

@@ -19,9 +19,9 @@ import           Pos.Chain.Txp (TxpConfiguration (..))
 import           Test.Pos.Chain.Txp.Gen (genTxpConfiguration)
 import           Test.Pos.Core.ExampleHelpers (exampleAddress, exampleAddress1,
                      exampleAddress2, exampleAddress3, exampleAddress4)
-import           Test.Pos.Util.Golden (discoverGolden, eachOf,
+import           Test.Pos.Util.Golden (discoverGolden,
                      goldenTestJSONPretty, goldenValueEquiv)
-import           Test.Pos.Util.Tripping (discoverRoundTrip, roundTripsAesonShow)
+import           Test.Pos.Util.Tripping (aesonYamlRoundtripShow, discoverRoundTrip)
 
 -------------------------------------------------------------------------------
 -- TxpConfiguration
@@ -44,7 +44,7 @@ golden_TxpConfiguration2 =
 
 roundTripTxpConfiguration :: Property
 roundTripTxpConfiguration =
-    eachOf 200 genTxpConfiguration roundTripsAesonShow
+    aesonYamlRoundtripShow 200 genTxpConfiguration
 
 golden_prettyEquivalence_TxpConfiguration0 :: Property
 golden_prettyEquivalence_TxpConfiguration0 = withFrozenCallStack $ do
